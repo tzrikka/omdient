@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"reflect"
 	"testing"
+
+	"github.com/rs/zerolog"
 )
 
 func TestBaseURL(t *testing.T) {
@@ -55,6 +57,67 @@ func TestBaseURL(t *testing.T) {
 func parseURL(rawURL string) *url.URL {
 	u, _ := url.Parse(rawURL)
 	return u
+}
+
+func TestGetID(t *testing.T) {
+	tests := []struct {
+		name       string
+		path       string
+		wantID     string
+		wantSuffix string
+		wantErr    bool
+	}{
+		{
+			name:    "missing_id",
+			path:    "/webhook/",
+			wantErr: true,
+		},
+		{
+			name:    "invalid_id",
+			path:    "/webhook/111",
+			wantErr: true,
+		},
+		{
+			name:    "invalid_id_with_suffix",
+			path:    "/webhook/111/foo",
+			wantErr: true,
+		},
+		{
+			name:   "valid_id",
+			path:   "/webhook/KE9jTT8u6FZW6qYKgpYoEA",
+			wantID: "KE9jTT8u6FZW6qYKgpYoEA",
+		},
+		{
+			name:       "valid_id_with_suffix",
+			path:       "/webhook/KE9jTT8u6FZW6qYKgpYoEA/foo/bar",
+			wantID:     "KE9jTT8u6FZW6qYKgpYoEA",
+			wantSuffix: "foo/bar",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/webhook/{id...}", func(w http.ResponseWriter, r *http.Request) {
+				gotID, gotSuffix, gotOK := getID(w, r, zerolog.Nop())
+				if gotOK == tt.wantErr {
+					t.Errorf("getID() OK: got = %v, want %v", gotOK, !tt.wantErr)
+				}
+				if !gotOK {
+					return
+				}
+				if gotID != tt.wantID {
+					t.Errorf("getID() ID: got = %q, want %q", gotID, tt.wantID)
+				}
+				if gotSuffix != tt.wantSuffix {
+					t.Errorf("getID() suffix: got = %q, want %q", gotID, tt.wantID)
+				}
+			})
+
+			r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, tt.path, http.NoBody)
+			mux.ServeHTTP(httptest.NewRecorder(), r)
+		})
+	}
 }
 
 func TestHTTPServerThrippyHandler(t *testing.T) {
