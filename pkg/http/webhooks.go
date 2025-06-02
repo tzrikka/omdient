@@ -22,7 +22,7 @@ import (
 
 const (
 	timeout = 3 * time.Second
-	maxSize = 1 << 23 // 2^23 bytes = 8 MiB.
+	maxSize = 10 << 20 // 10 * 2^20 bytes = 10 MiB.
 )
 
 type httpServer struct {
