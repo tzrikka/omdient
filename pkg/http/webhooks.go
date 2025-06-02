@@ -22,6 +22,7 @@ import (
 
 const (
 	timeout = 3 * time.Second
+	maxSize = 1 << 23 // 2^23 bytes = 8 MiB.
 )
 
 type httpServer struct {
@@ -83,6 +84,7 @@ func (s *httpServer) run() error {
 		http.HandleFunc("GET /callback", s.thrippyHandler)
 		http.HandleFunc("GET /start", s.thrippyHandler)
 		http.HandleFunc("POST /start", s.thrippyHandler)
+		http.HandleFunc("GET /success", s.thrippyHandler)
 	}
 
 	server := &http.Server{
@@ -104,54 +106,56 @@ func (s *httpServer) run() error {
 // webhookHandler checks and processes incoming asynchronous
 // event notifications over HTTP from third-party services.
 func (s *httpServer) webhookHandler(w http.ResponseWriter, r *http.Request) {
-	defer r.Body.Close()
-
 	l := log.With().Str("http_method", r.Method).Str("url_path", r.URL.EscapedPath()).Logger()
+	if r.Method == http.MethodPost {
+		l = l.With().Str("content_type", r.Header.Get("Content-Type")).Logger()
+	}
 	l.Info().Msg("received HTTP request")
 
-	id, suffix, ok := getID(w, r, l)
+	// Extract the link ID from the request's URL path.
+	id, suffix, ok := parseURL(w, r, l)
 	if !ok {
-		// Logging and HTTP status code setting already done in [getID].
-		return
+		return // Logging and HTTP status code already set in [getID].
 	}
 
 	l = l.With().Str("id", id).Logger()
-	m, err := thrippy.LinkSecrets(r.Context(), s.thrippyAddr, s.thrippyCreds, id)
+	if suffix != "" {
+		l = l.With().Str("suffix", suffix).Logger()
+	}
+
+	// Retrieve the link's template and secrets.
+	secrets, err := thrippy.LinkSecrets(r.Context(), s.thrippyAddr, s.thrippyCreds, id)
 	if err != nil {
 		l.Warn().Err(err).Msg("failed to get link secrets from Thrippy over gRPC")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	if m == nil {
+	if secrets == nil {
 		l.Warn().Err(err).Msg("bad request: link not found")
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
-	// TBD: Consume the request - based on the link's template & secrets, and potentially the suffix.
-	l.Debug().Any("query", r.URL.Query()).Send()
-	l.Debug().Any("headers", r.Header).Send()
-	l.Debug().Any("suffix", suffix).Send()
-	if r.Method == http.MethodPost {
-		// TODO: Support web forms too? (Based on the content type header).
-		m := new(map[string]any)
-		if err := json.NewDecoder(r.Body).Decode(m); err != nil {
-			l.Warn().Err(err).Send()
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		l.Debug().Any("json_body", m)
+	// TODO: Process the request by a service-specific handler.
+	_ = r.ParseForm()
+	raw, decoded, err := parseBody(w, r)
+	if err != nil {
+		l.Warn().Err(err).Msg("bad request: JSON decoding error")
+		w.WriteHeader(http.StatusBadRequest)
+		return
 	}
-	l.Debug().Any("link_secrets", m).Send()
+
+	l.Debug().Any("url_path_suffix", suffix).Any("query_or_form", r.Form).Any("headers", r.Header).
+		Any("raw_payload", raw).Any("json_payload", decoded).Any("link_secrets", secrets).Send()
 }
 
-// getID extracts the connection ID from the request's URL path.
+// parseURL extracts the connection ID from the request's URL path.
 // The path may contain an opaque suffix after the ID, separated by a slash,
 // for third-party services that support/require multiple webhooks per connection.
-func getID(w http.ResponseWriter, r *http.Request, l zerolog.Logger) (id, suffix string, ok bool) {
+func parseURL(w http.ResponseWriter, r *http.Request, l zerolog.Logger) (id, suffix string, ok bool) {
 	id = r.PathValue("id")
 	if id == "" {
-		l.Warn().Msg("missing ID")
+		l.Warn().Msg("bad request: missing ID")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -163,13 +167,34 @@ func getID(w http.ResponseWriter, r *http.Request, l zerolog.Logger) (id, suffix
 	}
 
 	if _, err := shortuuid.DefaultEncoder.Decode(id); err != nil {
-		l.Warn().Err(err).Msg("ID is an invalid short UUID")
+		l.Warn().Err(err).Msg("bad request: ID is an invalid short UUID")
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
 	ok = true
 	return
+}
+
+// parseBody tries to parse the given HTTP request body as JSON.
+// It also returns the raw payload to support authenticity checks.
+// If the request is not a POST with a JSON content type, it returns nil.
+func parseBody(w http.ResponseWriter, r *http.Request) ([]byte, map[string]any, error) {
+	if r.Method != http.MethodPost || !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		return nil, nil, nil
+	}
+
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxSize))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return nil, nil, err
+	}
+
+	return raw, decoded, nil
 }
 
 // thrippyHandler passes-through incoming HTTP requests (OAuth callbacks),
@@ -198,7 +223,12 @@ func (s *httpServer) thrippyHandler(w http.ResponseWriter, r *http.Request) {
 	req.Header = r.Header.Clone()
 
 	// Send the proxy request.
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse // Let the client handle all redirects.
+		},
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		l.Err(err).Msg("failed to send Thrippy proxy request")
 		w.WriteHeader(http.StatusInternalServerError)
