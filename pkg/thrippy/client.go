@@ -24,15 +24,15 @@ func Connection(addr string, creds credentials.TransportCredentials) (*grpc.Clie
 	return grpc.NewClient(addr, grpc.WithTransportCredentials(creds))
 }
 
-// LinkSecrets returns the saved secrets of a given Thrippy link. This
-// function reports gRPC errors, but if the link is not found it returns nil.
-func LinkSecrets(ctx context.Context, grpcAddr string, creds credentials.TransportCredentials, linkID string) (map[string]string, error) {
+// LinkData returns the template name and saved secrets of a given Thrippy link.
+// This function reports gRPC errors, but if the link is not found it returns nil.
+func LinkData(ctx context.Context, grpcAddr string, creds credentials.TransportCredentials, linkID string) (string, map[string]string, error) {
 	l := zerolog.Ctx(ctx)
 
 	conn, err := Connection(grpcAddr, creds)
 	if err != nil {
 		l.Error().Stack().Err(err).Send()
-		return nil, err
+		return "", nil, err
 	}
 	defer conn.Close()
 
@@ -40,16 +40,26 @@ func LinkSecrets(ctx context.Context, grpcAddr string, creds credentials.Transpo
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	resp, err := c.GetCredentials(ctx, thrippypb.GetCredentialsRequest_builder{
+	// Template.
+	resp1, err := c.GetLink(ctx, thrippypb.GetLinkRequest_builder{
 		LinkId: proto.String(linkID),
 	}.Build())
 	if err != nil {
 		if status.Code(err) != codes.NotFound {
 			l.Error().Stack().Err(err).Send()
-			return nil, err
+			return "", nil, err
 		}
-		return nil, nil
+		return "", nil, nil
 	}
 
-	return resp.GetCredentials(), nil
+	// Credentials.
+	resp2, err := c.GetCredentials(ctx, thrippypb.GetCredentialsRequest_builder{
+		LinkId: proto.String(linkID),
+	}.Build())
+	if err != nil {
+		l.Error().Stack().Err(err).Send()
+		return "", nil, err
+	}
+
+	return resp1.GetTemplate(), resp2.GetCredentials(), nil
 }

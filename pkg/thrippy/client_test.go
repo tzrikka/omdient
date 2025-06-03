@@ -10,27 +10,35 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	thrippypb "github.com/tzrikka/thrippy-api/thrippy/v1"
 )
 
 type server struct {
 	thrippypb.UnimplementedThrippyServiceServer
-	resp *thrippypb.GetCredentialsResponse
-	err  error
+	linkResp  *thrippypb.GetLinkResponse
+	credsResp *thrippypb.GetCredentialsResponse
+	err       error
+}
+
+func (s *server) GetLink(_ context.Context, _ *thrippypb.GetLinkRequest) (*thrippypb.GetLinkResponse, error) {
+	return s.linkResp, s.err
 }
 
 func (s *server) GetCredentials(_ context.Context, _ *thrippypb.GetCredentialsRequest) (*thrippypb.GetCredentialsResponse, error) {
-	return s.resp, s.err
+	return s.credsResp, s.err
 }
 
-func TestLinkSecrets(t *testing.T) {
+func TestLinkData(t *testing.T) {
 	tests := []struct {
-		name    string
-		resp    *thrippypb.GetCredentialsResponse
-		respErr error
-		want    map[string]string
-		wantErr bool
+		name         string
+		linkResp     *thrippypb.GetLinkResponse
+		credsResp    *thrippypb.GetCredentialsResponse
+		respErr      error
+		wantTemplate string
+		wantSecrets  map[string]string
+		wantErr      bool
 	}{
 		{
 			name: "nil",
@@ -41,19 +49,27 @@ func TestLinkSecrets(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "no_secrets",
-			resp: thrippypb.GetCredentialsResponse_builder{}.Build(),
-		},
-		{
 			name:    "link_not_found",
 			respErr: status.Error(codes.NotFound, "link not found"),
 		},
 		{
+			name: "existing_link_without_secrets",
+			linkResp: thrippypb.GetLinkResponse_builder{
+				Template: proto.String("template"),
+			}.Build(),
+			credsResp:    thrippypb.GetCredentialsResponse_builder{}.Build(),
+			wantTemplate: "template",
+		},
+		{
 			name: "happy_path",
-			resp: thrippypb.GetCredentialsResponse_builder{
+			linkResp: thrippypb.GetLinkResponse_builder{
+				Template: proto.String("template"),
+			}.Build(),
+			credsResp: thrippypb.GetCredentialsResponse_builder{
 				Credentials: map[string]string{"aaa": "111", "bbb": "222"},
 			}.Build(),
-			want: map[string]string{"aaa": "111", "bbb": "222"},
+			wantTemplate: "template",
+			wantSecrets:  map[string]string{"aaa": "111", "bbb": "222"},
 		},
 	}
 
@@ -64,18 +80,25 @@ func TestLinkSecrets(t *testing.T) {
 				t.Fatal(err)
 			}
 			s := grpc.NewServer()
-			thrippypb.RegisterThrippyServiceServer(s, &server{resp: tt.resp, err: tt.respErr})
+			thrippypb.RegisterThrippyServiceServer(s, &server{
+				linkResp:  tt.linkResp,
+				credsResp: tt.credsResp,
+				err:       tt.respErr,
+			})
 			go func() {
 				_ = s.Serve(lis)
 			}()
 
-			got, err := LinkSecrets(t.Context(), lis.Addr().String(), insecureCreds(), "link ID")
+			template, secrets, err := LinkData(t.Context(), lis.Addr().String(), insecureCreds(), "link ID")
 			if (err != nil) != tt.wantErr {
-				t.Errorf("LinkSecrets() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("LinkData() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("LinkSecrets() = %v, want %v", got, tt.want)
+			if template != tt.wantTemplate {
+				t.Errorf("LinkData() template = %q, want %q", template, tt.wantTemplate)
+			}
+			if !reflect.DeepEqual(secrets, tt.wantSecrets) {
+				t.Errorf("LinkData() secrets = %v, want %v", secrets, tt.wantSecrets)
 			}
 		})
 	}

@@ -5,7 +5,7 @@ go 1.24.3
 require (
 	github.com/lithammer/shortuuid/v4 v4.2.0
 	github.com/rs/zerolog v1.34.0
-	github.com/tzrikka/thrippy-api v1.0.0
+	github.com/tzrikka/thrippy-api v1.1.0
 	github.com/tzrikka/xdg v1.2.3
 	github.com/urfave/cli-altsrc/v3 v3.0.1
 	github.com/urfave/cli/v3 v3.3.3

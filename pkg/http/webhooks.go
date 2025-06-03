@@ -17,6 +17,8 @@ import (
 	"github.com/urfave/cli/v3"
 	"google.golang.org/grpc/credentials"
 
+	"github.com/tzrikka/omdient/pkg/links"
+	"github.com/tzrikka/omdient/pkg/links/receivers"
 	"github.com/tzrikka/omdient/pkg/thrippy"
 )
 
@@ -124,19 +126,31 @@ func (s *httpServer) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Retrieve the link's template and secrets.
-	secrets, err := thrippy.LinkSecrets(r.Context(), s.thrippyAddr, s.thrippyCreds, id)
+	template, secrets, err := thrippy.LinkData(r.Context(), s.thrippyAddr, s.thrippyCreds, id)
 	if err != nil {
 		l.Warn().Err(err).Msg("failed to get link secrets from Thrippy over gRPC")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	if secrets == nil {
-		l.Warn().Err(err).Msg("bad request: link not found")
+	if template == "" && secrets == nil {
+		l.Warn().Msg("bad request: link not found")
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	if template != "" && secrets == nil {
+		l.Warn().Msg("bad request: link not initialized")
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
-	// TODO: Process the request by a service-specific handler.
+	// Process the request by a service-specific handler.
+	f, ok := links.WebhookHandlers[template]
+	if !ok {
+		l.Warn().Str("template", template).Msg("bad request: unsupported link template for webhooks")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
 	_ = r.ParseForm()
 	raw, decoded, err := parseBody(w, r)
 	if err != nil {
@@ -145,8 +159,14 @@ func (s *httpServer) webhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	l.Debug().Any("url_path_suffix", suffix).Any("query_or_form", r.Form).Any("headers", r.Header).
-		Any("raw_payload", raw).Any("json_payload", decoded).Any("link_secrets", secrets).Send()
+	w.WriteHeader(f(l.WithContext(r.Context()), receivers.WebhookData{
+		PathSuffix:  suffix,
+		Headers:     r.Header,
+		QueryOrForm: r.Form,
+		RawPayload:  raw,
+		JSONPayload: decoded,
+		LinkSecrets: secrets,
+	}))
 }
 
 // parseURL extracts the connection ID from the request's URL path.
