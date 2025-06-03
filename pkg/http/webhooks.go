@@ -1,6 +1,7 @@
 package http
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -130,13 +131,15 @@ func (s *httpServer) webhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = r.ParseForm()
 	raw, decoded, err := parseBody(w, r)
 	if err != nil {
 		l.Warn().Err(err).Msg("bad request: JSON decoding error")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+
+	r.Body = io.NopCloser(bytes.NewReader(raw))
+	_ = r.ParseForm()
 
 	// Forward the request's data to a service-specific handler.
 	l = l.With().Str("template", template).Logger()
@@ -189,13 +192,17 @@ func parseURL(r *http.Request, l zerolog.Logger) (string, string, int) {
 // It also returns the raw payload to support authenticity checks.
 // If the request is not a POST with a JSON content type, it returns nil.
 func parseBody(w http.ResponseWriter, r *http.Request) ([]byte, map[string]any, error) {
-	if r.Method != http.MethodPost || !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+	if r.Method != http.MethodPost {
 		return nil, nil, nil
 	}
 
 	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxSize))
 	if err != nil {
 		return nil, nil, err
+	}
+
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		return raw, nil, nil
 	}
 
 	var decoded map[string]any
