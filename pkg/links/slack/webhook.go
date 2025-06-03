@@ -53,7 +53,7 @@ func WebhookHandler(ctx context.Context, w http.ResponseWriter, r receivers.Requ
 		l.Debug().Str("event_type", "url_verification").
 			Msg("replied to Slack URL verification event")
 		w.Header().Add(headerContentType, "text/plain")
-		w.Write(fmt.Append(nil, r.JSONPayload["challenge"]))
+		_, _ = w.Write(fmt.Append(nil, r.JSONPayload["challenge"]))
 		return 0 // [http.StatusOK] already written by "w.Write".
 	}
 
