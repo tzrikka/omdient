@@ -6,7 +6,7 @@ import (
 	"net/url"
 )
 
-type WebhookData struct {
+type RequestData struct {
 	PathSuffix  string
 	Headers     http.Header
 	QueryOrForm url.Values
@@ -15,4 +15,4 @@ type WebhookData struct {
 	LinkSecrets map[string]string
 }
 
-type WebhookHandlerFunc func(ctx context.Context, data WebhookData) int
+type WebhookHandlerFunc func(ctx context.Context, w http.ResponseWriter, r RequestData) int

@@ -139,21 +139,25 @@ func (s *httpServer) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Forward the request's data to a service-specific handler.
+	l = l.With().Str("template", template).Logger()
 	f, ok := links.WebhookHandlers[template]
 	if !ok {
-		l.Warn().Str("template", template).Msg("bad request: unsupported link template for webhooks")
+		l.Warn().Msg("bad request: unsupported link template for webhooks")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	w.WriteHeader(f(l.WithContext(r.Context()), receivers.WebhookData{
+	statusCode = f(l.WithContext(r.Context()), w, receivers.RequestData{
 		PathSuffix:  pathSuffix,
 		Headers:     r.Header,
 		QueryOrForm: r.Form,
 		RawPayload:  raw,
 		JSONPayload: decoded,
 		LinkSecrets: secrets,
-	}))
+	})
+	if statusCode > 0 {
+		w.WriteHeader(statusCode)
+	}
 }
 
 // parseURL extracts the Thrippy link ID from the request's URL path.
