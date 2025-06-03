@@ -8,6 +8,8 @@ import (
 
 // WebhookHandlers is a map of all the link-specific webhooks that Omdient supports.
 var WebhookHandlers = map[string]receivers.WebhookHandlerFunc{
+	"github-app-jwt":  github.WebhookHandler,
+	"github-user-pat": github.WebhookHandler,
 	"github-webhook":  github.WebhookHandler,
 	"slack-bot-token": slack.WebhookHandler,
 }
