@@ -114,40 +114,19 @@ func (s *httpServer) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	l.Info().Msg("received HTTP request")
 
-	// Extract the link ID from the request's URL path.
-	id, suffix, ok := parseURL(w, r, l)
-	if !ok {
-		return // Logging and HTTP status code already set in [getID].
-	}
-
-	l = l.With().Str("id", id).Logger()
-	if suffix != "" {
-		l = l.With().Str("suffix", suffix).Logger()
-	}
-
-	// Retrieve the link's template and secrets.
-	template, secrets, err := thrippy.LinkData(r.Context(), s.thrippyAddr, s.thrippyCreds, id)
-	if err != nil {
-		l.Warn().Err(err).Msg("failed to get link secrets from Thrippy over gRPC")
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	if template == "" && secrets == nil {
-		l.Warn().Msg("bad request: link not found")
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-	if template != "" && secrets == nil {
-		l.Warn().Msg("bad request: link not initialized")
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	// Process the request by a service-specific handler.
-	f, ok := links.WebhookHandlers[template]
-	if !ok {
-		l.Warn().Str("template", template).Msg("bad request: unsupported link template for webhooks")
+	linkID, pathSuffix, statusCode := parseURL(r, l)
+	if statusCode != http.StatusOK {
 		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	l = l.With().Str("link_id", linkID).Logger()
+	if pathSuffix != "" {
+		l = l.With().Str("path_suffix", pathSuffix).Logger()
+	}
+
+	template, secrets, err := thrippy.LinkData(r.Context(), s.thrippyAddr, s.thrippyCreds, linkID)
+	if statusCode := checkLinkData(l, template, secrets, err); statusCode != http.StatusOK {
+		w.WriteHeader(statusCode)
 		return
 	}
 
@@ -159,8 +138,16 @@ func (s *httpServer) webhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Forward the request's data to a service-specific handler.
+	f, ok := links.WebhookHandlers[template]
+	if !ok {
+		l.Warn().Str("template", template).Msg("bad request: unsupported link template for webhooks")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
 	w.WriteHeader(f(l.WithContext(r.Context()), receivers.WebhookData{
-		PathSuffix:  suffix,
+		PathSuffix:  pathSuffix,
 		Headers:     r.Header,
 		QueryOrForm: r.Form,
 		RawPayload:  raw,
@@ -169,17 +156,17 @@ func (s *httpServer) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	}))
 }
 
-// parseURL extracts the connection ID from the request's URL path.
+// parseURL extracts the Thrippy link ID from the request's URL path.
 // The path may contain an opaque suffix after the ID, separated by a slash,
 // for third-party services that support/require multiple webhooks per connection.
-func parseURL(w http.ResponseWriter, r *http.Request, l zerolog.Logger) (id, suffix string, ok bool) {
-	id = r.PathValue("id")
+func parseURL(r *http.Request, l zerolog.Logger) (string, string, int) {
+	id := r.PathValue("id")
 	if id == "" {
 		l.Warn().Msg("bad request: missing ID")
-		w.WriteHeader(http.StatusBadRequest)
-		return
+		return "", "", http.StatusBadRequest
 	}
 
+	suffix := ""
 	if strings.Contains(id, "/") {
 		parts := strings.SplitN(id, "/", 2)
 		id = parts[0]
@@ -188,12 +175,10 @@ func parseURL(w http.ResponseWriter, r *http.Request, l zerolog.Logger) (id, suf
 
 	if _, err := shortuuid.DefaultEncoder.Decode(id); err != nil {
 		l.Warn().Err(err).Msg("bad request: ID is an invalid short UUID")
-		w.WriteHeader(http.StatusNotFound)
-		return
+		return "", "", http.StatusNotFound
 	}
 
-	ok = true
-	return
+	return id, suffix, http.StatusOK
 }
 
 // parseBody tries to parse the given HTTP request body as JSON.
@@ -215,6 +200,25 @@ func parseBody(w http.ResponseWriter, r *http.Request) ([]byte, map[string]any, 
 	}
 
 	return raw, decoded, nil
+}
+
+func checkLinkData(l zerolog.Logger, template string, secrets map[string]string, err error) int {
+	if err != nil {
+		l.Warn().Err(err).Msg("failed to get link secrets from Thrippy over gRPC")
+		return http.StatusInternalServerError
+	}
+
+	if template == "" && secrets == nil {
+		l.Warn().Msg("bad request: link not found")
+		return http.StatusNotFound
+	}
+
+	if template != "" && secrets == nil {
+		l.Warn().Msg("bad request: link not initialized")
+		return http.StatusNotFound
+	}
+
+	return http.StatusOK
 }
 
 // thrippyHandler passes-through incoming HTTP requests (OAuth callbacks),

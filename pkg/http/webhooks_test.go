@@ -67,52 +67,51 @@ func TestParseURL(t *testing.T) {
 		path       string
 		wantID     string
 		wantSuffix string
-		wantErr    bool
+		wantStatus int
 	}{
 		{
-			name:    "missing_id",
-			path:    "/webhook/",
-			wantErr: true,
+			name:       "missing_id",
+			path:       "/webhook/",
+			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:    "invalid_id",
-			path:    "/webhook/111",
-			wantErr: true,
+			name:       "invalid_id",
+			path:       "/webhook/111",
+			wantStatus: http.StatusNotFound,
 		},
 		{
-			name:    "invalid_id_with_suffix",
-			path:    "/webhook/111/foo",
-			wantErr: true,
+			name:       "invalid_id_with_suffix",
+			path:       "/webhook/111/foo",
+			wantStatus: http.StatusNotFound,
 		},
 		{
-			name:   "valid_id",
-			path:   "/webhook/KE9jTT8u6FZW6qYKgpYoEA",
-			wantID: "KE9jTT8u6FZW6qYKgpYoEA",
+			name:       "valid_id",
+			path:       "/webhook/KE9jTT8u6FZW6qYKgpYoEA",
+			wantID:     "KE9jTT8u6FZW6qYKgpYoEA",
+			wantStatus: http.StatusOK,
 		},
 		{
 			name:       "valid_id_with_suffix",
 			path:       "/webhook/KE9jTT8u6FZW6qYKgpYoEA/foo/bar",
 			wantID:     "KE9jTT8u6FZW6qYKgpYoEA",
 			wantSuffix: "foo/bar",
+			wantStatus: http.StatusOK,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mux := http.NewServeMux()
-			mux.HandleFunc("/webhook/{id...}", func(w http.ResponseWriter, r *http.Request) {
-				id, suffix, ok := parseURL(w, r, zerolog.Nop())
-				if ok == tt.wantErr {
-					t.Errorf("getID() OK: got = %v, want %v", ok, !tt.wantErr)
-				}
-				if !ok {
-					return
-				}
+			mux.HandleFunc("/webhook/{id...}", func(_ http.ResponseWriter, r *http.Request) {
+				id, suffix, status := parseURL(r, zerolog.Nop())
 				if id != tt.wantID {
-					t.Errorf("getID() ID: got = %q, want %q", id, tt.wantID)
+					t.Errorf("parseURL() ID: got = %q, want %q", id, tt.wantID)
 				}
 				if suffix != tt.wantSuffix {
-					t.Errorf("getID() suffix: got = %q, want %q", id, tt.wantID)
+					t.Errorf("parseURL() suffix: got = %q, want %q", id, tt.wantID)
+				}
+				if status != tt.wantStatus {
+					t.Errorf("parseURL() status: got = %v, want %v", status, tt.wantStatus)
 				}
 			})
 
