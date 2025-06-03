@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	headerContentType    = "Content-Type"
-	headerSlackTimestamp = "X-Slack-Request-Timestamp"
-	headerSlackSignature = "X-Slack-Signature"
+	contentTypeHeader = "Content-Type"
+	timestampHeader   = "X-Slack-Request-Timestamp"
+	signatureHeader   = "X-Slack-Signature"
 
 	// The maximum shift/delay that we allow between an inbound request's
 	// timestamp, and our current timestamp, to defend against replay attacks.
@@ -52,7 +52,7 @@ func WebhookHandler(ctx context.Context, w http.ResponseWriter, r receivers.Requ
 	if r.PathSuffix == "event" && r.JSONPayload["type"] == "url_verification" {
 		l.Debug().Str("event_type", "url_verification").
 			Msg("replied to Slack URL verification event")
-		w.Header().Add(headerContentType, "text/plain")
+		w.Header().Add(contentTypeHeader, "text/plain")
 		_, _ = w.Write(fmt.Append(nil, r.JSONPayload["challenge"]))
 		return 0 // [http.StatusOK] already written by "w.Write".
 	}
@@ -62,7 +62,6 @@ func WebhookHandler(ctx context.Context, w http.ResponseWriter, r receivers.Requ
 		Any("path_suffix", r.PathSuffix).
 		Any("headers", r.Headers).
 		Any("query_or_form", r.QueryOrForm).
-		Any("raw_payload", r.RawPayload).
 		Any("json_payload", r.JSONPayload).
 		Any("link_secrets", r.LinkSecrets).
 		Send()
@@ -76,9 +75,9 @@ func checkContentTypeHeader(l zerolog.Logger, r receivers.RequestData) int {
 		expected = "application/json"
 	}
 
-	v := r.Headers.Get(headerContentType)
+	v := r.Headers.Get(contentTypeHeader)
 	if v != expected {
-		l.Warn().Str("header", headerContentType).Str("got", v).Str("want", expected).
+		l.Warn().Str("header", contentTypeHeader).Str("got", v).Str("want", expected).
 			Msg("bad request: unexpected header value")
 		return http.StatusBadRequest
 	}
@@ -87,22 +86,22 @@ func checkContentTypeHeader(l zerolog.Logger, r receivers.RequestData) int {
 }
 
 func checkTimestampHeader(l zerolog.Logger, r receivers.RequestData) int {
-	ts := r.Headers.Get(headerSlackTimestamp)
+	ts := r.Headers.Get(timestampHeader)
 	if ts == "" {
-		l.Warn().Str("header", headerSlackTimestamp).Msg("bad request: missing header")
+		l.Warn().Str("header", timestampHeader).Msg("bad request: missing header")
 		return http.StatusBadRequest
 	}
 
 	secs, err := strconv.ParseInt(ts, 10, 64)
 	if err != nil {
-		l.Warn().Str("header", headerSlackTimestamp).Str("got", ts).
+		l.Warn().Str("header", timestampHeader).Str("got", ts).
 			Msg("bad request: invalid header value")
 		return http.StatusBadRequest
 	}
 
 	d := time.Since(time.Unix(secs, 0))
 	if d.Abs() > maxDifference {
-		l.Warn().Str("header", headerSlackTimestamp).Dur("difference", d).
+		l.Warn().Str("header", timestampHeader).Dur("difference", d).
 			Msg("bad request: stale header value")
 		return http.StatusBadRequest
 	}
@@ -111,9 +110,9 @@ func checkTimestampHeader(l zerolog.Logger, r receivers.RequestData) int {
 }
 
 func checkSignatureHeader(l zerolog.Logger, r receivers.RequestData) int {
-	sig := r.Headers.Get(headerSlackSignature)
+	sig := r.Headers.Get(signatureHeader)
 	if sig == "" {
-		l.Warn().Str("header", headerSlackSignature).Msg("bad request: missing header")
+		l.Warn().Str("header", signatureHeader).Msg("bad request: missing header")
 		return http.StatusForbidden
 	}
 
@@ -123,8 +122,8 @@ func checkSignatureHeader(l zerolog.Logger, r receivers.RequestData) int {
 		return http.StatusInternalServerError
 	}
 
-	ts := r.Headers.Get(headerSlackTimestamp)
-	if !verifySignature(secret, ts, sig, r.RawPayload) {
+	ts := r.Headers.Get(timestampHeader)
+	if !verifySignature(l, secret, ts, sig, r.RawPayload) {
 		l.Warn().Str("signature", sig).Bool("has_signing_secret", secret != "").
 			Msg("signature verification failed")
 		return http.StatusForbidden
@@ -135,11 +134,15 @@ func checkSignatureHeader(l zerolog.Logger, r receivers.RequestData) int {
 
 // verifySignature implements
 // https://docs.slack.dev/authentication/verifying-requests-from-slack.
-func verifySignature(signingSecret, ts, want string, body []byte) bool {
+func verifySignature(l zerolog.Logger, signingSecret, ts, want string, body []byte) bool {
 	mac := hmac.New(sha256.New, []byte(signingSecret))
 
 	n, err := mac.Write(fmt.Appendf(nil, "%s:%s:", slackSigVersion, ts))
-	if err != nil || n != len(ts)+4 {
+	if err != nil {
+		l.Err(err).Msg("HMAC write error")
+		return false
+	}
+	if n != len(ts)+4 {
 		return false
 	}
 
