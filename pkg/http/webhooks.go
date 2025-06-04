@@ -25,7 +25,7 @@ import (
 
 const (
 	timeout = 3 * time.Second
-	maxSize = 10 << 20 // 10 * 2^20 bytes = 10 MiB.
+	maxSize = 10 << 20 // 10 MiB.
 )
 
 type httpServer struct {
