@@ -240,7 +240,7 @@ func (s *httpServer) thrippyHandler(w http.ResponseWriter, r *http.Request) {
 	l.Info().Msg("passing-through HTTP request to Thrippy")
 
 	// Adjust the original URL to the Thrippy server's base URL.
-	u := r.URL
+	u, _ := url.Parse(r.URL.String())
 	u.Scheme = s.thrippyURL.Scheme
 	u.Host = s.thrippyURL.Host
 
