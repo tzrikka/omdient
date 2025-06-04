@@ -240,15 +240,14 @@ func (s *httpServer) thrippyHandler(w http.ResponseWriter, r *http.Request) {
 	l.Info().Msg("passing-through HTTP request to Thrippy")
 
 	// Adjust the original URL to the Thrippy server's base URL.
-	u, _ := url.Parse(r.URL.String())
-	u.Scheme = s.thrippyURL.Scheme
-	u.Host = s.thrippyURL.Host
+	r.URL.Scheme = s.thrippyURL.Scheme
+	r.URL.Host = s.thrippyURL.Host
 
 	// Construct the proxy request.
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, r.Method, u.String(), r.Body)
+	req, err := http.NewRequestWithContext(ctx, r.Method, r.URL.String(), r.Body)
 	if err != nil {
 		l.Err(err).Msg("failed to construct Thrippy proxy request")
 		w.WriteHeader(http.StatusInternalServerError)
