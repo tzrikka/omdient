@@ -51,6 +51,21 @@ func (o Opcode) String() string {
 	}
 }
 
+// Frame parsing/construction constants, as defined in
+// https://datatracker.ietf.org/doc/html/rfc6455#section-5.2.
+const (
+	bit0     = 0x80
+	bit1     = 0x40
+	bit2     = 0x20
+	bit3     = 0x10
+	bits1to7 = 0x7f
+	bits4to7 = 0x0f
+
+	len7bits  = 125 // Payload length of up to 125 bytes.
+	len16bits = 126 // Extended payload length of up to 64 KiB.
+	len64bits = 127 // Extended payload length of up to 16 EiB.
+)
+
 // frameHeader is based on https://datatracker.ietf.org/doc/html/rfc6455#section-5.2,
 // excluding the masking key and payload data.
 type frameHeader struct {
@@ -95,11 +110,11 @@ func (c *Conn) readFrameHeader() (frameHeader, error) {
 		return h, fmt.Errorf("failed to read first byte of incoming WebSocket frame: %w", err)
 	}
 
-	h.fin = (b & 0x80) != 0     // Bit 0.
-	h.rsv[0] = (b & 0x40) != 0  // Bit 1.
-	h.rsv[1] = (b & 0x20) != 0  // Bit 2.
-	h.rsv[2] = (b & 0x10) != 0  // Bit 3.
-	h.opcode = Opcode(b & 0x0f) // Bits 4-7.
+	h.fin = (b & bit0) != 0
+	h.rsv[0] = (b & bit1) != 0
+	h.rsv[1] = (b & bit2) != 0
+	h.rsv[2] = (b & bit3) != 0
+	h.opcode = Opcode(b & bits4to7)
 
 	// Read the second byte.
 	b, err = c.bufio.ReadByte()
@@ -107,16 +122,16 @@ func (c *Conn) readFrameHeader() (frameHeader, error) {
 		return h, fmt.Errorf("failed to read second byte of incoming WebSocket frame: %w", err)
 	}
 
-	h.mask = (b & 0x80) != 0 // Bit 0.
+	h.mask = (b & bit0) != 0
 
-	b &= 0x7f // Bits 1-7.
+	b &= bits1to7
 	switch {
-	case b <= 125: // 0 extra bytes for payloads of up to 125 bytes.
+	case b <= len7bits:
 		h.payloadLength = uint64(b)
-	case b == 126: // 2 extra bytes for payloads of up to 64 KiB.
+	case b == len16bits:
 		_, err = io.ReadFull(c.bufio, c.readBuf[:2])
 		h.payloadLength = uint64(binary.BigEndian.Uint16(c.readBuf[:2]))
-	default: // == 127: 8 extra bytes for payloads of up to 16 EiB.
+	case b == len64bits:
 		_, err = io.ReadFull(c.bufio, c.readBuf[:8])
 		h.payloadLength = binary.BigEndian.Uint64(c.readBuf[:8])
 	}
@@ -189,7 +204,7 @@ func (c *Conn) checkFrameHeader(h frameHeader) (string, error) {
 //   - Sending data: https://datatracker.ietf.org/doc/html/rfc6455#section-6.1
 func (c *Conn) writeFrame(op Opcode, payload []byte) error {
 	// Construct the header (automatically set the FIN and MASKED bits).
-	if err := c.bufio.WriteByte(0x80 | byte(op)); err != nil {
+	if err := c.bufio.WriteByte(bit0 | byte(op)); err != nil {
 		return fmt.Errorf("failed to write WebSocket control frame header: %w", err)
 	}
 
@@ -230,11 +245,11 @@ func (c *Conn) writePayloadLength(n int) error {
 	switch {
 	// Up to 125 bytes (0 extra bytes).
 	case n <= maxControlPayload:
-		return c.bufio.WriteByte(0x80 | byte(n))
+		return c.bufio.WriteByte(bit0 | byte(n))
 
 	// Up to 64 KiB (2 extra bytes).
 	case n <= math.MaxUint16:
-		if err := c.bufio.WriteByte(0xfe); err != nil {
+		if err := c.bufio.WriteByte(len16bits); err != nil {
 			return err
 		}
 		binary.BigEndian.PutUint16(c.writeBuf[:2], uint16(n))
@@ -243,7 +258,7 @@ func (c *Conn) writePayloadLength(n int) error {
 
 	// Up to 16 EiB (8 extra bytes).
 	default:
-		if err := c.bufio.WriteByte(0xff); err != nil {
+		if err := c.bufio.WriteByte(len64bits); err != nil {
 			return err
 		}
 		binary.BigEndian.PutUint64(c.writeBuf[:8], uint64(n))

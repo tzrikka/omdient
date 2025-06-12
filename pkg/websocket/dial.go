@@ -207,12 +207,13 @@ func checkHTTPHeader(headers http.Header, key, want string) error {
 	return nil
 }
 
+var acceptGUID = []byte("258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
+
 // expectedServerAcceptValue constructs the expected value of the "Sec-WebSocket-Accept"
 // header, as defined in https://datatracker.ietf.org/doc/html/rfc6455#section-4.2.2.
 func expectedServerAcceptValue(key string) string {
 	h := sha1.New()
 	h.Write([]byte(key))
-	h.Write([]byte("258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
-
+	h.Write(acceptGUID)
 	return base64.StdEncoding.EncodeToString(h.Sum(nil))
 }
