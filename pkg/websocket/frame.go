@@ -273,6 +273,6 @@ func (c *Conn) writePayloadLength(n int) error {
 // same payload results in the original unmasked payload.
 func (c *Conn) mask(payload []byte) {
 	for i := range len(payload) {
-		payload[i] ^= c.writeBuf[i%4]
+		payload[i] ^= c.writeBuf[i&3]
 	}
 }
