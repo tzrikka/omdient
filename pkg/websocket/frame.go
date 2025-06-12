@@ -249,7 +249,7 @@ func (c *Conn) writePayloadLength(n int) error {
 
 	// Up to 64 KiB (2 extra bytes).
 	case n <= math.MaxUint16:
-		if err := c.bufio.WriteByte(len16bits); err != nil {
+		if err := c.bufio.WriteByte(bit0 | len16bits); err != nil {
 			return err
 		}
 		binary.BigEndian.PutUint16(c.writeBuf[:2], uint16(n))
@@ -258,7 +258,7 @@ func (c *Conn) writePayloadLength(n int) error {
 
 	// Up to 16 EiB (8 extra bytes).
 	default:
-		if err := c.bufio.WriteByte(len64bits); err != nil {
+		if err := c.bufio.WriteByte(bit0 | len64bits); err != nil {
 			return err
 		}
 		binary.BigEndian.PutUint64(c.writeBuf[:8], uint64(n))
