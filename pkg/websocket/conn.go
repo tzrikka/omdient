@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"bufio"
+	"io"
 	"net/http"
 	"sync"
 
@@ -34,6 +35,9 @@ type Conn struct {
 	readBuf  [8]byte
 	writeBuf [8]byte
 	closeBuf [maxControlPayload]byte
+
+	// For unit-testing only.
+	nonceGen io.Reader
 }
 
 // IncomingMessages returns the connection's channel that publishes

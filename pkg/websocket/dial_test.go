@@ -4,10 +4,81 @@ import (
 	"crypto/rand"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func withTestNonceGen() Opt {
+	return func(c *Conn) {
+		c.nonceGen = strings.NewReader("0123456789abcdef")
+	}
+}
+
+func TestDial(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     int
+		upgrade    string
+		connection string
+		accept     string
+		wantErr    bool
+	}{
+		{
+			name:       "200_instead_of_101",
+			status:     200,
+			upgrade:    "WEBSOCKET",
+			connection: "UPGRADE",
+			accept:     "BACScCJPNqyz+UBoqMH89VmURoA=",
+			wantErr:    true,
+		},
+		{
+			name:       "no_upgrade_header",
+			status:     101,
+			connection: "UPGRADE",
+			accept:     "BACScCJPNqyz+UBoqMH89VmURoA=",
+			wantErr:    true,
+		},
+		{
+			name:    "no_connection_header",
+			status:  101,
+			upgrade: "WEBSOCKET",
+			accept:  "BACScCJPNqyz+UBoqMH89VmURoA=",
+			wantErr: true,
+		},
+		{
+			name:       "no_accept_header",
+			status:     101,
+			upgrade:    "WEBSOCKET",
+			connection: "UPGRADE",
+			wantErr:    true,
+		},
+		{
+			name:       "happy_path",
+			status:     101,
+			upgrade:    "WEBSOCKET",
+			connection: "UPGRADE",
+			accept:     "BACScCJPNqyz+UBoqMH89VmURoA=",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Upgrade", tt.upgrade)
+				w.Header().Set("Connection", tt.connection)
+				w.Header().Set("Sec-WebSocket-Accept", tt.accept)
+				w.WriteHeader(tt.status)
+			}))
+			defer s.Close()
+
+			if _, err := Dial(t.Context(), s.URL, withTestNonceGen()); (err != nil) != tt.wantErr {
+				t.Errorf("Dial() error = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
 
 func TestAdjustHTTPClient(t *testing.T) {
 	c1 := &http.Client{}

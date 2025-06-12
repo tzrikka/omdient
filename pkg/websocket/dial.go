@@ -54,8 +54,9 @@ func WithHTTPHeaders(hs http.Header) Opt {
 // [WebSocket handshake]: https://datatracker.ietf.org/doc/html/rfc6455#section-4.1
 func Dial(ctx context.Context, wsURL string, opts ...Opt) (*Conn, error) {
 	c := &Conn{
-		logger:  zerolog.Ctx(ctx),
-		headers: http.Header{},
+		logger:   zerolog.Ctx(ctx),
+		headers:  http.Header{},
+		nonceGen: rand.Reader,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -66,7 +67,7 @@ func Dial(ctx context.Context, wsURL string, opts ...Opt) (*Conn, error) {
 		c.client = adjustHTTPClient(*c.client)
 	}
 
-	nonce, err := generateNonce(rand.Reader)
+	nonce, err := generateNonce(c.nonceGen)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate nonce for WebSocket handshake: %w", err)
 	}
@@ -121,9 +122,9 @@ func adjustHTTPClient(c http.Client) *http.Client {
 	return &c
 }
 
-// generateNonce generates a nonce consisting of a randomly selected
-// 16-byte value that has been Base64-encoded. The nonce MUST be
-// selected randomly for each connection.
+// generateNonce generates a nonce consisting of a randomly
+// selected 16-byte value that has been Base64-encoded. The
+// nonce MUST be selected randomly for each connection.
 func generateNonce(r io.Reader) (string, error) {
 	b := make([]byte, 16)
 	if _, err := io.ReadFull(r, b); err != nil {
