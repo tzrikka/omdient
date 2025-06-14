@@ -87,15 +87,9 @@ func (c *Conn) readMessage() []byte {
 			// client doesn't send unsolicited "Ping" control frames.
 		}
 
-		if h.fin && (h.opcode == opcodeText || h.opcode == opcodeBinary) {
+		if h.fin && h.opcode <= opcodeBinary {
 			data = msg.Bytes()
-			if len(data) > 0 {
-				k := "text"
-				if h.opcode == opcodeBinary {
-					k = "binary"
-				}
-				c.logger.Debug().Bytes(k, data).Msg("received WebSocket data message")
-			}
+			c.logger.Debug().Bytes("data", data).Msg("received WebSocket data message")
 			return data
 		}
 	}
