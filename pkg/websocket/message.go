@@ -89,6 +89,9 @@ func (c *Conn) readMessage() []byte {
 
 		if h.fin && h.opcode <= opcodeBinary {
 			data = msg.Bytes()
+			if data == nil {
+				data = []byte{}
+			}
 			c.logger.Debug().Bytes("data", data).Msg("received WebSocket data message")
 			return data
 		}
@@ -121,7 +124,7 @@ func (c *Conn) SendTextMessage(data []byte) <-chan error {
 // [isolation or safe multiplexing]: https://datatracker.ietf.org/doc/html/rfc6455#section-5.4
 func (c *Conn) SendBinaryMessage(data []byte) <-chan error {
 	err := make(chan error)
-	c.writeC <- message{opcode: opcodeText, data: data, err: err}
+	c.writeC <- message{opcode: opcodeBinary, data: data, err: err}
 	return err
 }
 
