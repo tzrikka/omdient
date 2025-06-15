@@ -168,8 +168,8 @@ func (c *Conn) isCloseSent() bool {
 	return c.closeSent
 }
 
-func (c *Conn) Close() {
-	c.sendCloseControlFrame(StatusNormalClosure, "")
+func (c *Conn) Close(s StatusCode) {
+	c.sendCloseControlFrame(s, "")
 }
 
 func (c *Conn) IsClosed() bool {

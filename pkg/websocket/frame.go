@@ -17,8 +17,8 @@ type Opcode int
 
 const (
 	opcodeContinuation Opcode = iota
-	opcodeText
-	opcodeBinary
+	OpcodeText
+	OpcodeBinary
 	// 3-7 are reserved for further non-control frames.
 	_
 	_
@@ -36,9 +36,9 @@ func (o Opcode) String() string {
 	switch o {
 	case opcodeContinuation:
 		return "continuation"
-	case opcodeText:
+	case OpcodeText:
 		return "text"
-	case opcodeBinary:
+	case OpcodeBinary:
 		return "binary"
 	case opcodeClose:
 		return "close"
@@ -153,28 +153,41 @@ const maxControlPayload = 125
 //   - Overview: https://datatracker.ietf.org/doc/html/rfc6455#section-5.1
 //   - Base framing protocol: https://datatracker.ietf.org/doc/html/rfc6455#section-5.2
 //   - Control frames: https://datatracker.ietf.org/doc/html/rfc6455#section-5.5
-func (c *Conn) checkFrameHeader(h frameHeader) (string, error) {
-	// Reserved bits MUST be 0 unless an extension is negotiated that defines
+func (c *Conn) checkFrameHeader(h frameHeader, msgType Opcode) (string, error) {
+	// "Reserved bits MUST be 0 unless an extension is negotiated that defines
 	// meanings for non-zero values. If a nonzero value is received and none of
 	// the negotiated extensions defines the meaning of such a nonzero value,
-	// the receiving endpoint MUST _Fail the WebSocket Connection_.
+	// the receiving endpoint MUST _Fail the WebSocket Connection_."
 	if h.rsv[0] || h.rsv[1] || h.rsv[2] {
 		reason := "invalid reserved bits"
 		return reason, fmt.Errorf("WebSocket server sent %s", reason)
 	}
 
-	// If an unknown opcode is received, the receiving
-	// endpoint MUST _Fail the WebSocket Connection_.
+	// "If an unknown opcode is received, the receiving
+	// endpoint MUST _Fail the WebSocket Connection_."
 	if (h.opcode > 2 && h.opcode < 8) || h.opcode > 10 {
 		reason := fmt.Sprintf("unknown opcode %d", h.opcode)
 		return reason, fmt.Errorf("WebSocket server sent %s", reason)
 	}
 
-	// All control frames MUST have a payload length of
-	// 125 bytes or less and MUST NOT be fragmented.
+	// "A fragmented message consists of a single frame with the FIN bit
+	// clear and an opcode other than 0, followed by zero or more frames
+	// with the FIN bit clear and the opcode set to 0, and terminated by
+	// a single frame with the FIN bit set and an opcode of 0."
+	if h.opcode == opcodeContinuation && msgType == opcodeContinuation {
+		reason := "continuation frame with nothing to continue"
+		return reason, fmt.Errorf("WebSocket server sent %s", reason)
+	}
+	if (h.opcode == OpcodeText || h.opcode == OpcodeBinary) && msgType != opcodeContinuation {
+		reason := "continuation frame with non-continuation opcode"
+		return reason, fmt.Errorf("WebSocket server sent %s", reason)
+	}
+
+	// "All control frames MUST have a payload length of
+	// 125 bytes or less and MUST NOT be fragmented."
 	if h.opcode > 7 {
 		if h.payloadLength > maxControlPayload {
-			reason := fmt.Sprintf("payload size too large: %d", h.payloadLength)
+			reason := "payload length too big"
 			return reason, fmt.Errorf("WebSocket control frame (opcode %d) too large: %d bytes", h.opcode, h.payloadLength)
 		}
 		if !h.fin {
@@ -183,8 +196,8 @@ func (c *Conn) checkFrameHeader(h frameHeader) (string, error) {
 		}
 	}
 
-	// A server MUST NOT mask any frames that it sends to the client.
-	// A client MUST close a connection if it detects a masked frame.
+	// "A server MUST NOT mask any frames that it sends to the client.
+	// A client MUST close a connection if it detects a masked frame."
 	if h.mask {
 		reason := "server payloads must not be masked"
 		return reason, errors.New("WebSocket server masked the payload data")

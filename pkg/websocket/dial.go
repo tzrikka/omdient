@@ -92,8 +92,8 @@ func Dial(ctx context.Context, wsURL string, opts ...Opt) (*Conn, error) {
 	}
 
 	c.bufio = bufio.NewReadWriter(bufio.NewReader(rwc), bufio.NewWriter(rwc))
-	c.readC = make(chan []byte)
-	c.writeC = make(chan message)
+	c.readC = make(chan DataMessage)
+	c.writeC = make(chan internalMessage)
 
 	go c.readMessages()
 	go c.writeMessages()

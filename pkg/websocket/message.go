@@ -20,8 +20,10 @@ import (
 //   - Data frames: https://datatracker.ietf.org/doc/html/rfc6455#section-5.6
 //   - Receiving data: https://datatracker.ietf.org/doc/html/rfc6455#section-6.2
 //   - Closing the connection: https://datatracker.ietf.org/doc/html/rfc6455#section-7
-func (c *Conn) readMessage() []byte {
+func (c *Conn) readMessage() *internalMessage {
 	var msg bytes.Buffer
+	var op Opcode
+
 	for {
 		h, err := c.readFrameHeader()
 		if err != nil {
@@ -29,6 +31,7 @@ func (c *Conn) readMessage() []byte {
 			c.sendCloseControlFrame(StatusInternalError, "frame header reading error")
 			return nil
 		}
+
 		c.logger.Trace().Str("opcode", h.opcode.String()).Uint64("length", h.payloadLength).
 			Msg("received WebSocket frame")
 
@@ -42,19 +45,21 @@ func (c *Conn) readMessage() []byte {
 			}
 		}
 
-		if reason, err := c.checkFrameHeader(h); err != nil {
+		if reason, err := c.checkFrameHeader(h, op); err != nil {
 			c.logger.Err(err).Msg("protocol error due to invalid frame")
 			c.sendCloseControlFrame(StatusProtocolError, reason)
 			return nil
 		}
 
 		switch h.opcode {
-		// "EXAMPLE: For a text message sent as three fragments, the first
-		// fragment would have an opcode of 0x1 and a FIN bit clear, the
-		// second fragment would have an opcode of 0x0 and a FIN bit clear,
-		// and the third fragment would have an opcode of 0x0 and a FIN bit
-		// that is set."
-		case opcodeContinuation, opcodeText, opcodeBinary:
+		// "A fragmented message consists of a single frame with the FIN bit
+		// clear and an opcode other than 0, followed by zero or more frames
+		// with the FIN bit clear and the opcode set to 0, and terminated by
+		// a single frame with the FIN bit set and an opcode of 0."
+		case opcodeContinuation, OpcodeText, OpcodeBinary:
+			if h.opcode != opcodeContinuation {
+				op = h.opcode
+			}
 			if h.payloadLength > 0 {
 				if _, err := msg.Write(data); err != nil {
 					c.logger.Err(err).Msg("failed to store WebSocket data frame payload")
@@ -87,13 +92,12 @@ func (c *Conn) readMessage() []byte {
 			// client doesn't send unsolicited "Ping" control frames.
 		}
 
-		if h.fin && h.opcode <= opcodeBinary {
+		if h.fin && h.opcode <= OpcodeBinary {
 			data = msg.Bytes()
 			if data == nil {
 				data = []byte{}
 			}
-			c.logger.Debug().Bytes("data", data).Msg("received WebSocket data message")
-			return data
+			return &internalMessage{Opcode: op, Data: data}
 		}
 	}
 }
@@ -109,7 +113,7 @@ func (c *Conn) readMessage() []byte {
 // [isolation or safe multiplexing]: https://datatracker.ietf.org/doc/html/rfc6455#section-5.4
 func (c *Conn) SendTextMessage(data []byte) <-chan error {
 	err := make(chan error)
-	c.writeC <- message{opcode: opcodeText, data: data, err: err}
+	c.writeC <- internalMessage{Opcode: OpcodeText, Data: data, err: err}
 	return err
 }
 
@@ -124,7 +128,7 @@ func (c *Conn) SendTextMessage(data []byte) <-chan error {
 // [isolation or safe multiplexing]: https://datatracker.ietf.org/doc/html/rfc6455#section-5.4
 func (c *Conn) SendBinaryMessage(data []byte) <-chan error {
 	err := make(chan error)
-	c.writeC <- message{opcode: opcodeBinary, data: data, err: err}
+	c.writeC <- internalMessage{Opcode: OpcodeBinary, Data: data, err: err}
 	return err
 }
 
@@ -138,8 +142,8 @@ func (c *Conn) SendBinaryMessage(data []byte) <-chan error {
 // Use this function instead of calling [writeFrame] directly!
 //
 // [WebSocket control frame]: https://datatracker.ietf.org/doc/html/rfc6455#section-5.5
-func (c *Conn) sendControlFrame(opcode Opcode, payload []byte) <-chan error {
+func (c *Conn) sendControlFrame(op Opcode, payload []byte) <-chan error {
 	err := make(chan error)
-	c.writeC <- message{opcode: opcode, data: payload, err: err}
+	c.writeC <- internalMessage{Opcode: op, Data: payload, err: err}
 	return err
 }

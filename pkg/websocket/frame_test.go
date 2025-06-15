@@ -18,17 +18,17 @@ func TestConnReadFrameHeader(t *testing.T) {
 		{
 			name:   "unmasked_text_hello",
 			reader: []byte{0x81, 0x05, 0x48, 0x65, 0x6c, 0x6f},
-			want:   frameHeader{fin: true, opcode: opcodeText, payloadLength: 5},
+			want:   frameHeader{fin: true, opcode: OpcodeText, payloadLength: 5},
 		},
 		{
 			name:   "masked_text_hello",
 			reader: []byte{0x81, 0x85, 0x37, 0xfa, 0x21, 0x3d, 0x7f, 0x9f, 0x4d, 0x51, 0x58},
-			want:   frameHeader{fin: true, opcode: opcodeText, mask: true, payloadLength: 5},
+			want:   frameHeader{fin: true, opcode: OpcodeText, mask: true, payloadLength: 5},
 		},
 		{
 			name:   "first_fragment_unmasked_text_hel",
 			reader: []byte{0x01, 0x03, 0x48, 0x65, 0x6c},
-			want:   frameHeader{opcode: opcodeText, payloadLength: 3},
+			want:   frameHeader{opcode: OpcodeText, payloadLength: 3},
 		},
 		{
 			name:   "unmasked_ping",
@@ -43,12 +43,12 @@ func TestConnReadFrameHeader(t *testing.T) {
 		{
 			name:   "256b_unmasked_binary",
 			reader: []byte{0x82, 0x7e, 0x01, 0x00},
-			want:   frameHeader{fin: true, opcode: opcodeBinary, payloadLength: 256},
+			want:   frameHeader{fin: true, opcode: OpcodeBinary, payloadLength: 256},
 		},
 		{
 			name:   "64k_unmasked_binary",
 			reader: []byte{0x82, 0x7f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00},
-			want:   frameHeader{fin: true, opcode: opcodeBinary, payloadLength: 65536},
+			want:   frameHeader{fin: true, opcode: OpcodeBinary, payloadLength: 65536},
 		},
 	}
 
@@ -74,7 +74,7 @@ func TestConnWriteFrame(t *testing.T) {
 
 	payload := []byte("hello")
 	origPayload := []byte("hello")
-	if err := c.writeFrame(opcodeText, payload); err != nil {
+	if err := c.writeFrame(OpcodeText, payload); err != nil {
 		t.Fatalf("Conn.writeFrame() error = %v", err)
 	}
 

@@ -19,8 +19,8 @@ type Conn struct {
 
 	// Initialized after the actual handshake.
 	bufio  *bufio.ReadWriter
-	readC  chan []byte
-	writeC chan message
+	readC  chan DataMessage
+	writeC chan internalMessage
 
 	// No need for synchronization: value changes are possible only in
 	// one direction (false to true), and are always done by a single
@@ -40,31 +40,33 @@ type Conn struct {
 	nonceGen io.Reader
 }
 
-// IncomingMessages returns the connection's channel that publishes
-// data messages as they are received from the server.
-func (c *Conn) IncomingMessages() <-chan []byte {
-	return c.readC
+type DataMessage struct {
+	Opcode Opcode
+	Data   []byte
 }
 
-// message is used to synchronize concurrent calls to [Conn.writeFrame].
-type message struct {
-	opcode Opcode
-	data   []byte
+// internalMessage is used to synchronize concurrent calls to [Conn.writeFrame].
+type internalMessage struct {
+	Opcode Opcode
+	Data   []byte
 	err    chan<- error
+}
+
+// IncomingMessages returns the connection's channel that publishes
+// data messages as they are received from the server.
+func (c *Conn) IncomingMessages() <-chan DataMessage {
+	return c.readC
 }
 
 // readMessages runs as a [Conn] goroutine, to call [Conn.readMessage]
 // continuously, in order to process control and data frames, and
 // publish data messages to the subscribers of this connection.
 func (c *Conn) readMessages() {
-	msg := []byte{}
+	msg := c.readMessage()
 	for msg != nil {
+		c.readC <- DataMessage{Opcode: msg.Opcode, Data: msg.Data}
 		msg = c.readMessage()
-		c.readC <- msg
 	}
-
-	// Nil messages are a signal that the WebSocket connection is closing/closed,
-	// in which case this goroutine and its channel are no longer useful.
 	close(c.readC)
 }
 
@@ -73,7 +75,7 @@ func (c *Conn) readMessages() {
 // need to implement frame fragmentation in outbound messages.
 func (c *Conn) writeMessages() {
 	for msg := range c.writeC {
-		msg.err <- c.writeFrame(msg.opcode, msg.data)
+		msg.err <- c.writeFrame(msg.Opcode, msg.Data)
 		// The message's error channel can be used at most once.
 		close(msg.err)
 	}

@@ -102,7 +102,7 @@ func BenchmarkReadMessage(b *testing.B) {
 			for b.Loop() {
 				c.bufio = bufio.NewReadWriter(bufio.NewReader(bytes.NewReader(f)), nil)
 				msg := c.readMessage()
-				if n := len(msg); n != bb.msgLen {
+				if n := len(msg.Data); n != bb.msgLen {
 					b.Fatalf("len(msg): got %d, want %d", n, bb.msgLen)
 				}
 			}
