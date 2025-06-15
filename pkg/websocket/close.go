@@ -3,6 +3,8 @@ package websocket
 import (
 	"encoding/binary"
 	"strconv"
+	"time"
+	"unicode/utf8"
 )
 
 // StatusCode indicate a reason for the closure of
@@ -119,46 +121,91 @@ func (s StatusCode) String() string {
 // The difference from [maxControlPayload] is due to the status code.
 const maxCloseReason = maxControlPayload - 2
 
-func parseClose(payload []byte) (StatusCode, string) {
+// parseClosePayload extracts the [StatusCode] and the optional
+// UTF-8 reason from an incoming connection-close control frame.
+func (c *Conn) parseClosePayload(payload []byte) (status StatusCode, reason string) {
 	switch len(payload) {
-	case 0, 1:
-		return StatusNotReceived, ""
-	case 2:
-		return StatusCode(binary.BigEndian.Uint16(payload)), ""
+	case 0:
+		c.logger.Trace().Str("close_status", StatusNotReceived.String()).
+			Msg("received WebSocket close control frame")
+		status = StatusNormalClosure
+		return
+	case 1:
+		status = StatusProtocolError
 	default:
-		return StatusCode(binary.BigEndian.Uint16(payload)), string(payload[2:])
+		status = StatusCode(binary.BigEndian.Uint16(payload))
 	}
+
+	if len(payload) > 2 {
+		r := payload[2:]
+		if !utf8.Valid(r) {
+			status = StatusInvalidData
+			r = payload[0:0]
+		}
+		reason = string(r)
+	}
+
+	c.logger.Trace().Str("close_status", status.String()).
+		Str("close_reason", reason).Msg("received WebSocket close control frame")
+	return
 }
 
-func (c *Conn) sendCloseControlFrame(s StatusCode, reason string) {
-	c.closeSentMu.Lock()
-	defer c.closeSentMu.Unlock()
-
-	// "If an endpoint receives a Close frame and did not previously send
-	// a Close frame, the endpoint MUST send a Close frame in response."
-	if c.closeSent {
-		return // No op.
+// checkClosePayload performs protocol sanity checks and corrections on the
+// [StatusCode] and UTF-8 reason of an incoming connection-close control frame.
+func checkClosePayload(status StatusCode, reason string) (StatusCode, string) {
+	s := int(status)
+	switch {
+	case status < StatusNormalClosure || s == 1004:
+		status = StatusProtocolError
+	case status == StatusNotReceived || status == StatusClosedAbnormally:
+		status = StatusProtocolError
+	case status > StatusTLSHandshake && s < 3000:
+		status = StatusProtocolError
 	}
 
 	if len(reason) > maxCloseReason {
 		reason = reason[:maxCloseReason]
 	}
 
-	binary.BigEndian.PutUint16(c.closeBuf[:2], uint16(s))
+	return status, reason
+}
+
+func (c *Conn) sendCloseControlFrame(status StatusCode, reason string) {
+	c.closeSentMu.Lock()
+	defer c.closeSentMu.Unlock()
+
+	// "If an endpoint receives a Close frame and did not previously send
+	// a Close frame, the endpoint MUST send a Close frame in response."
+	if c.closeSent {
+		return
+	}
+
+	// Let clients handle the previous frame, if needed. This helps
+	// some Autobahn test cases to succeed deterministically.
+	time.Sleep(time.Millisecond)
+
+	status, reason = checkClosePayload(status, reason)
+
+	binary.BigEndian.PutUint16(c.closeBuf[:2], uint16(status))
 	if len(reason) > 0 {
 		copy(c.closeBuf[2:], reason)
 	}
 
 	n := 2 + len(reason)
 	if err := <-c.sendControlFrame(opcodeClose, c.closeBuf[:n]); err != nil {
-		c.logger.Err(err).Str("close_status", s.String()).Str("close_reason", reason).
+		c.logger.Err(err).Str("close_status", status.String()).Str("close_reason", reason).
 			Msg("failed to send WebSocket close control frame")
 	} else {
-		c.logger.Trace().Str("close_status", s.String()).Str("close_reason", reason).
+		c.logger.Trace().Str("close_status", status.String()).Str("close_reason", reason).
 			Msg("sent WebSocket close control frame")
 	}
 
 	c.closeSent = true
+
+	if c.closeReceived {
+		_ = c.closer.Close()
+		return
+	}
 }
 
 func (c *Conn) isCloseSent() bool {

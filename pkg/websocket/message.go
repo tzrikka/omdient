@@ -3,6 +3,7 @@ package websocket
 import (
 	"bytes"
 	"io"
+	"unicode/utf8"
 )
 
 // readMessage reads incoming frames from the server, responds to
@@ -20,6 +21,7 @@ import (
 //   - Data frames: https://datatracker.ietf.org/doc/html/rfc6455#section-5.6
 //   - Receiving data: https://datatracker.ietf.org/doc/html/rfc6455#section-6.2
 //   - Closing the connection: https://datatracker.ietf.org/doc/html/rfc6455#section-7
+//   - Handling Errors in UTF-8-Encoded Data: https://datatracker.ietf.org/doc/html/rfc6455#section-8.1
 func (c *Conn) readMessage() *internalMessage {
 	var msg bytes.Buffer
 	var op Opcode
@@ -32,8 +34,8 @@ func (c *Conn) readMessage() *internalMessage {
 			return nil
 		}
 
-		c.logger.Trace().Str("opcode", h.opcode.String()).Uint64("length", h.payloadLength).
-			Msg("received WebSocket frame")
+		c.logger.Trace().Bool("fin", h.fin).Str("opcode", h.opcode.String()).
+			Uint64("length", h.payloadLength).Msg("received WebSocket frame")
 
 		var data []byte
 		if h.payloadLength > 0 {
@@ -71,10 +73,8 @@ func (c *Conn) readMessage() *internalMessage {
 		// "If an endpoint receives a Close frame and did not previously send
 		// a Close frame, the endpoint MUST send a Close frame in response."
 		case opcodeClose:
-			status, reason := parseClose(data)
-			c.logger.Trace().Str("close_status", status.String()).Str("close_reason", reason).
-				Msg("received WebSocket close control frame")
 			c.closeReceived = true
+			status, reason := c.parseClosePayload(data)
 			c.sendCloseControlFrame(status, reason)
 			return nil // Not an error, but we no longer need to receive new frames.
 
@@ -93,13 +93,30 @@ func (c *Conn) readMessage() *internalMessage {
 		}
 
 		if h.fin && h.opcode <= OpcodeBinary {
-			data = msg.Bytes()
-			if data == nil {
-				data = []byte{}
-			}
-			return &internalMessage{Opcode: op, Data: data}
+			return c.finalizeMessage(op, msg.Bytes())
 		}
 	}
+}
+
+func (c *Conn) finalizeMessage(op Opcode, data []byte) *internalMessage {
+	if data == nil {
+		data = []byte{}
+	}
+
+	c.logger.Trace().Str("opcode", op.String()).Int("length", len(data)).
+		Msg("finished receiving WebSocket data message")
+
+	// "When an endpoint is to interpret a byte stream as UTF-8 but finds
+	// that the byte stream is not, in fact, a valid UTF-8 stream, that
+	// endpoint MUST _Fail the WebSocket Connection_. This rule applies both
+	// during the opening handshake and during subsequent data exchange."
+	if op == OpcodeText && len(data) > 0 && !utf8.Valid(data) {
+		c.logger.Error().Msg("protocol error due to invalid UTF-8 text")
+		c.sendCloseControlFrame(StatusInvalidData, "invalid UTF-8 text")
+		return nil
+	}
+
+	return &internalMessage{Opcode: op, Data: data}
 }
 
 // SendTextMessage sends a [UTF-8 text] message to the server.

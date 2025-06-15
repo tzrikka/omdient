@@ -94,6 +94,7 @@ func Dial(ctx context.Context, wsURL string, opts ...Opt) (*Conn, error) {
 	c.bufio = bufio.NewReadWriter(bufio.NewReader(rwc), bufio.NewWriter(rwc))
 	c.readC = make(chan DataMessage)
 	c.writeC = make(chan internalMessage)
+	c.closer = rwc
 
 	go c.readMessages()
 	go c.writeMessages()

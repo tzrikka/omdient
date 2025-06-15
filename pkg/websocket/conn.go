@@ -21,6 +21,7 @@ type Conn struct {
 	bufio  *bufio.ReadWriter
 	readC  chan DataMessage
 	writeC chan internalMessage
+	closer io.ReadWriteCloser
 
 	// No need for synchronization: value changes are possible only in
 	// one direction (false to true), and are always done by a single
