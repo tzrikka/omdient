@@ -163,7 +163,7 @@ func checkClosePayload(status StatusCode, reason string) (StatusCode, string) {
 	}
 
 	if len(reason) > maxCloseReason {
-		reason = reason[:maxCloseReason]
+		reason = reason[:maxCloseReason] // TODO: Keep valid UTF-8 (i.e. runes not bytes).
 	}
 
 	return status, reason
@@ -201,20 +201,23 @@ func (c *Conn) sendCloseControlFrame(status StatusCode, reason string) {
 	}
 
 	n := 2 + len(reason)
+	l := c.logger.With().Str("close_status", status.String()).Str("close_reason", reason).Logger()
 	if err := <-c.sendControlFrame(opcodeClose, c.closeBuf[:n]); err != nil {
-		c.logger.Err(err).Str("close_status", status.String()).Str("close_reason", reason).
-			Msg("failed to send WebSocket close control frame")
+		l.Err(err).Msg("failed to send WebSocket close control frame")
 	} else {
-		c.logger.Trace().Str("close_status", status.String()).Str("close_reason", reason).
-			Msg("sent WebSocket close control frame")
+		l.Trace().Msg("sent WebSocket close control frame")
 	}
 
+	// Handle (or prepare for) the next step in the
+	// WebSocket closing handshake, if relevant.
 	c.closeSent = true
 
 	if c.closeReceived {
 		_ = c.closer.Close()
 		return
 	}
+
+	// TODO: Start a timer to force-close if the server doesn't respond.
 }
 
 func (c *Conn) isCloseSent() bool {

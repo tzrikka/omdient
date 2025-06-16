@@ -53,6 +53,7 @@ func WithHTTPHeaders(hs http.Header) DialOpt {
 //
 // [WebSocket handshake]: https://datatracker.ietf.org/doc/html/rfc6455#section-4.1
 func Dial(ctx context.Context, wsURL string, opts ...DialOpt) (*Conn, error) {
+	// Initialize optional configuration details and internal helpers.
 	c := &Conn{
 		logger:   zerolog.Ctx(ctx),
 		headers:  http.Header{},
@@ -67,6 +68,7 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOpt) (*Conn, error) {
 		c.client = adjustHTTPClient(*c.client)
 	}
 
+	// Send handshake request & check response.
 	nonce, err := generateNonce(c.nonceGen)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate nonce for WebSocket handshake: %w", err)
