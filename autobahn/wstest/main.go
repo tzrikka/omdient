@@ -1,7 +1,7 @@
-// wstest tests Omdient's [WebSocket client implementation]
-// against the fuzzing server of the [Autobahn Testsuite].
+// wstest tests Omdient's [WebSocket client] against
+// the fuzzing server of the [Autobahn Testsuite].
 //
-// [WebSocket client implementation]: https://pkg.go.dev/github.com/tzrikka/omdient/pkg/websocket
+// [WebSocket client]: https://pkg.go.dev/github.com/tzrikka/omdient/pkg/websocket
 // [Autobahn Testsuite]: https://github.com/crossbario/autobahn-testsuite
 package main
 
