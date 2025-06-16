@@ -130,7 +130,7 @@ func (c *Conn) finalizeMessage(op Opcode, data []byte) *internalMessage {
 // [isolation or safe multiplexing]: https://datatracker.ietf.org/doc/html/rfc6455#section-5.4
 func (c *Conn) SendTextMessage(data []byte) <-chan error {
 	err := make(chan error)
-	c.writeC <- internalMessage{Opcode: OpcodeText, Data: data, err: err}
+	c.writer <- internalMessage{Opcode: OpcodeText, Data: data, err: err}
 	return err
 }
 
@@ -145,7 +145,7 @@ func (c *Conn) SendTextMessage(data []byte) <-chan error {
 // [isolation or safe multiplexing]: https://datatracker.ietf.org/doc/html/rfc6455#section-5.4
 func (c *Conn) SendBinaryMessage(data []byte) <-chan error {
 	err := make(chan error)
-	c.writeC <- internalMessage{Opcode: OpcodeBinary, Data: data, err: err}
+	c.writer <- internalMessage{Opcode: OpcodeBinary, Data: data, err: err}
 	return err
 }
 
@@ -161,6 +161,6 @@ func (c *Conn) SendBinaryMessage(data []byte) <-chan error {
 // [WebSocket control frame]: https://datatracker.ietf.org/doc/html/rfc6455#section-5.5
 func (c *Conn) sendControlFrame(op Opcode, payload []byte) <-chan error {
 	err := make(chan error)
-	c.writeC <- internalMessage{Opcode: op, Data: payload, err: err}
+	c.writer <- internalMessage{Opcode: op, Data: payload, err: err}
 	return err
 }

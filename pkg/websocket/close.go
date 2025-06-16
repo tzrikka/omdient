@@ -7,18 +7,18 @@ import (
 	"unicode/utf8"
 )
 
-// StatusCode indicate a reason for the closure of
+// StatusCode indicates a reason for the closure of
 // an established WebSocket connection, as defined in
 // https://datatracker.ietf.org/doc/html/rfc6455#section-7.4.
-type StatusCode int
-
-// Based on https://datatracker.ietf.org/doc/html/rfc6455#section-7.4.1 and
-// https://www.iana.org/assignments/websocket/websocket.xhtml#close-code-number.
+//
+// See also https://www.iana.org/assignments/websocket/websocket.xhtml#close-code-number.
 //
 // Other status code ranges:
 //   - 0-999: not used
 //   - 3000-3999: reserved for use by libraries, frameworks, and applications
 //   - 4000-4999: reserved for private use and thus can't be registered
+type StatusCode int
+
 const (
 	// The purpose for which the connection was established has been fulfilled.
 	StatusNormalClosure StatusCode = iota + 1000
@@ -44,9 +44,7 @@ const (
 	StatusClosedAbnormally
 	// An endpoint is terminating the connection because it has received data
 	// within a message that was not consistent with the type of the message
-	// (e.g., non-UTF-8 [RFC 3629] data within a text message).
-	//
-	// [RFC 3629]: https://datatracker.ietf.org/doc/html/rfc3629
+	// (e.g., non-UTF-8 RFC 3629 data within a text message).
 	StatusInvalidData
 	// An endpoint is terminating the connection because it has received a message
 	// that violates its policy. This is a generic status code that can be returned
@@ -145,8 +143,9 @@ func (c *Conn) parseClosePayload(payload []byte) (status StatusCode, reason stri
 		reason = string(r)
 	}
 
-	c.logger.Trace().Str("close_status", status.String()).
-		Str("close_reason", reason).Msg("received WebSocket close control frame")
+	c.logger.Trace().Str("close_status", status.String()).Str("close_reason", reason).
+		Msg("received WebSocket close control frame")
+
 	return
 }
 
@@ -170,6 +169,16 @@ func checkClosePayload(status StatusCode, reason string) (StatusCode, string) {
 	return status, reason
 }
 
+// sendCloseControlFrame either initiates or responds to a
+// WebSocket closing handshake. This function can be called
+// from 2 places: [Conn.readMessage] and [Conn.Close].
+//
+// This function is idempotent: when calling it multiple
+// times, all calls after the initial one are no-ops.
+//
+// It is based on:
+//   - Control frames - close: https://datatracker.ietf.org/doc/html/rfc6455#section-5.5.1
+//   - Closing the connection: https://datatracker.ietf.org/doc/html/rfc6455#section-7
 func (c *Conn) sendCloseControlFrame(status StatusCode, reason string) {
 	c.closeSentMu.Lock()
 	defer c.closeSentMu.Unlock()
@@ -215,8 +224,16 @@ func (c *Conn) isCloseSent() bool {
 	return c.closeSent
 }
 
+// Close performs a [WebSocket closing handshake]
+// to initiate the closure of an open connection.
+//
+// [WebSocket closing handshake]: https://datatracker.ietf.org/doc/html/rfc6455#section-7.1.2
 func (c *Conn) Close(s StatusCode) {
 	c.sendCloseControlFrame(s, "")
+}
+
+func (c *Conn) CloseWithReason(s StatusCode, reason string) {
+	c.sendCloseControlFrame(s, reason)
 }
 
 func (c *Conn) IsClosed() bool {

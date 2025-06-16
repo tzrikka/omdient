@@ -19,8 +19,8 @@ type Conn struct {
 
 	// Initialized after the actual handshake.
 	bufio  *bufio.ReadWriter
-	readC  chan DataMessage
-	writeC chan internalMessage
+	reader chan Message
+	writer chan internalMessage
 	closer io.ReadWriteCloser
 
 	// No need for synchronization: value changes are possible only in
@@ -41,7 +41,10 @@ type Conn struct {
 	nonceGen io.Reader
 }
 
-type DataMessage struct {
+// WebSocket data message, from one or more (defragmented) data frames,
+// as defined in https://datatracker.ietf.org/doc/html/rfc6455#section-5.6.
+// Returned by the Go channel that is exposed by [Conn.IncomingMessages].
+type Message struct {
 	Opcode Opcode
 	Data   []byte
 }
@@ -54,9 +57,9 @@ type internalMessage struct {
 }
 
 // IncomingMessages returns the connection's channel that publishes
-// data messages as they are received from the server.
-func (c *Conn) IncomingMessages() <-chan DataMessage {
-	return c.readC
+// data [Message]s as they are received from the server.
+func (c *Conn) IncomingMessages() <-chan Message {
+	return c.reader
 }
 
 // readMessages runs as a [Conn] goroutine, to call [Conn.readMessage]
@@ -65,17 +68,17 @@ func (c *Conn) IncomingMessages() <-chan DataMessage {
 func (c *Conn) readMessages() {
 	msg := c.readMessage()
 	for msg != nil {
-		c.readC <- DataMessage{Opcode: msg.Opcode, Data: msg.Data}
+		c.reader <- Message{Opcode: msg.Opcode, Data: msg.Data}
 		msg = c.readMessage()
 	}
-	close(c.readC)
+	close(c.reader)
 }
 
 // writeMessages runs as a [Conn] goroutine, to synchronize concurrent
 // calls to [Conn.writeFrame]. For the time being, this package doesn't
 // need to implement frame fragmentation in outbound messages.
 func (c *Conn) writeMessages() {
-	for msg := range c.writeC {
+	for msg := range c.writer {
 		msg.err <- c.writeFrame(msg.Opcode, msg.Data)
 		// The message's error channel can be used at most once.
 		close(msg.err)

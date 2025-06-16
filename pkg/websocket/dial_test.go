@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func withTestNonceGen() Opt {
+func withTestNonceGen() DialOpt {
 	return func(c *Conn) {
 		c.nonceGen = strings.NewReader("0123456789abcdef")
 	}

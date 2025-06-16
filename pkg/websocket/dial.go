@@ -16,7 +16,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-type Opt func(*Conn)
+type DialOpt func(*Conn)
 
 var defaultClient = adjustHTTPClient(*http.DefaultClient)
 
@@ -26,7 +26,7 @@ var defaultClient = adjustHTTPClient(*http.DefaultClient)
 // Do not specify a custom timeout in the HTTP client! This will interfere with
 // the long-lived WebSocket connection beyond the scope of its initial handshake.
 // Instead, use [context.WithTimeout] with the [context.Context] passed to [Dial].
-func WithHTTPClient(hc *http.Client) Opt {
+func WithHTTPClient(hc *http.Client) DialOpt {
 	return func(c *Conn) {
 		c.client = hc
 	}
@@ -34,7 +34,7 @@ func WithHTTPClient(hc *http.Client) Opt {
 
 // WithHTTPHeader lets callers of [Dial] add a single HTTP header to the WebSocket
 // handshake's HTTP request. Use [WithHTTPHeaders] to specify multiple ones.
-func WithHTTPHeader(key, value string) Opt {
+func WithHTTPHeader(key, value string) DialOpt {
 	return func(c *Conn) {
 		c.headers.Add(key, value)
 	}
@@ -42,7 +42,7 @@ func WithHTTPHeader(key, value string) Opt {
 
 // WithHTTPHeaders lets callers of [Dial] add multiple HTTP headers to the WebSocket
 // handshake's HTTP request, instead of calling [WithHTTPHeader] multiple times.
-func WithHTTPHeaders(hs http.Header) Opt {
+func WithHTTPHeaders(hs http.Header) DialOpt {
 	return func(c *Conn) {
 		c.headers = hs.Clone()
 	}
@@ -52,7 +52,7 @@ func WithHTTPHeaders(hs http.Header) Opt {
 // a connection to the given URL ("ws://..." or "wss://").
 //
 // [WebSocket handshake]: https://datatracker.ietf.org/doc/html/rfc6455#section-4.1
-func Dial(ctx context.Context, wsURL string, opts ...Opt) (*Conn, error) {
+func Dial(ctx context.Context, wsURL string, opts ...DialOpt) (*Conn, error) {
 	c := &Conn{
 		logger:   zerolog.Ctx(ctx),
 		headers:  http.Header{},
@@ -92,8 +92,8 @@ func Dial(ctx context.Context, wsURL string, opts ...Opt) (*Conn, error) {
 	}
 
 	c.bufio = bufio.NewReadWriter(bufio.NewReader(rwc), bufio.NewWriter(rwc))
-	c.readC = make(chan DataMessage)
-	c.writeC = make(chan internalMessage)
+	c.reader = make(chan Message)
+	c.writer = make(chan internalMessage)
 	c.closer = rwc
 
 	go c.readMessages()

@@ -1,5 +1,5 @@
 // Package websocket is a lightweight yet robust client-only
-// implementation of the WebSocket protocol ([RFC 6455]).
+// implementation of the WebSocket protocol (RFC 6455).
 //
 // It focuses on continuous asynchronous reading of text/binary
 // messages, and enables occasional writing.
@@ -25,7 +25,6 @@
 //
 // Note C: WebSocket [extensions] and [subprotocols] are not supported yet.
 //
-// [RFC 6455]: https://datatracker.ietf.org/doc/html/rfc6455
 // [extensions]: https://www.iana.org/assignments/websocket/websocket.xhtml#extension-name
 // [subprotocols]: https://www.iana.org/assignments/websocket/websocket.xhtml#subprotocol-name
 package websocket
