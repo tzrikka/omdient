@@ -15,7 +15,7 @@ Instructions:
        crossbario/autobahn-testsuite
    ```
 
-2. Run Omdient's WebSocket test client:
+2. Run Omdient's WebSocket client tester:
 
    ```shell
    go run ./wstest

@@ -1,5 +1,5 @@
-// wstest is used to test Omdient's [WebSocket client implementation]
-// against the [Autobahn Testsuite].
+// wstest tests Omdient's [WebSocket client implementation]
+// against the fuzzing server of the [Autobahn Testsuite].
 //
 // [WebSocket client implementation]: https://pkg.go.dev/github.com/tzrikka/omdient/pkg/websocket
 // [Autobahn Testsuite]: https://github.com/crossbario/autobahn-testsuite
@@ -18,17 +18,16 @@ import (
 )
 
 const (
-	base  = "ws://127.0.0.1:9001"
-	agent = "omdient"
+	baseURL = "ws://127.0.0.1:9001"
+	agent   = "omdient"
 )
 
 func main() {
 	initZeroLog()
-
 	n := getCaseCount()
 	log.Logger.Info().Int("n", n+1).Msg("case count")
 
-	// Not implemented (so excluded in "config/fuzzingserver.json"):
+	// Not implemented in Omdient (so excluded in "config/fuzzingserver.json"):
 	// - 6.4.*: Fail-fast on invalid UTF-8 frames
 	// - 12.* and 13.*: WebSocket compression
 	for i := range n {
@@ -47,47 +46,62 @@ func initZeroLog() {
 	}).With().Caller().Logger()
 }
 
-func getCaseCount() (n int) {
-	url := base + "/getCaseCount"
-	conn, err := websocket.Dial(log.Logger.WithContext(context.Background()), url)
+func dial(url string) (*websocket.Conn, error) {
+	return websocket.Dial(log.Logger.WithContext(context.Background()), url)
+}
+
+// getCaseCount retrieves the number of enabled test cases from
+// the Autobahn fuzzing server, using a WebSocket request.
+func getCaseCount() int {
+	conn, err := dial(baseURL + "/getCaseCount")
 	if err != nil {
-		log.Logger.Fatal().Err(err).Msg("websocket.Dial error")
+		log.Logger.Fatal().Err(err).Msg("dial error")
 	}
 
 	msg, ok := <-conn.IncomingMessages()
 	if !ok {
 		log.Logger.Debug().Msg("connection closed")
-		return
+		return 0
 	}
 
-	n, err = strconv.Atoi(string(msg.Data))
+	n, err := strconv.Atoi(string(msg.Data))
 	if err != nil {
 		log.Logger.Fatal().Err(err).Msg("invalid test case count")
-		return
 	}
 
-	return
+	return n
+}
+
+// updateReports instructs the Autobahn fuzzing server to generate/update
+// all the HTML and JSON files for all the test-case results.
+func updateReports() {
+	log.Logger.Info().Msg("updating reports")
+
+	url := fmt.Sprintf("%s/updateReports?agent=%s", baseURL, agent)
+	if _, err := dial(url); err != nil {
+		log.Logger.Fatal().Err(err).Msg("dial error")
+	}
 }
 
 func runCase(i int) {
-	log.Logger.Info().Int("case", i).Msg("starting test")
+	l := log.Logger.With().Int("case", i).Logger()
+	l.Info().Msg("starting test")
 
-	url := fmt.Sprintf("%s/runCase?case=%d&agent=%s", base, i, agent)
-	conn, err := websocket.Dial(log.Logger.WithContext(context.Background()), url)
+	conn, err := dial(fmt.Sprintf("%s/runCase?case=%d&agent=%s", baseURL, i, agent))
 	if err != nil {
-		log.Logger.Fatal().Err(err).Msg("websocket.Dial error")
+		l.Fatal().Err(err).Msg("dial error")
 	}
 
 	// Echo loop.
 	for {
 		msg := <-conn.IncomingMessages()
 		if msg.Data == nil {
-			log.Logger.Debug().Int("case", i).Msg("connection closed")
+			l.Debug().Msg("connection closed")
 			break
 		}
 
-		log.Logger.Info().Int("case", i).Str("opcode", msg.Opcode.String()).
-			Int("length", len(msg.Data)).Msg("received message")
+		l = l.With().Str("opcode", msg.Opcode.String()).Logger()
+		l.Info().Int("length", len(msg.Data)).Msg("received message")
 
 		switch msg.Opcode {
 		case websocket.OpcodeText:
@@ -95,28 +109,12 @@ func runCase(i int) {
 		case websocket.OpcodeBinary:
 			err = <-conn.SendBinaryMessage(msg.Data)
 		default:
-			log.Logger.Fatal().Str("opcode", msg.Opcode.String()).
-				Msg("unexpected opcode in data message")
+			l.Fatal().Msg("unexpected opcode in data message")
 		}
 
 		if err != nil {
-			log.Logger.Err(err).Int("case", i).Str("opcode", msg.Opcode.String()).Msg("echo error")
+			l.Err(err).Msg("echo error")
 			conn.Close(websocket.StatusNormalClosure)
 		}
-	}
-}
-
-func updateReports() {
-	log.Logger.Info().Msg("updating reports")
-
-	url := fmt.Sprintf("%s/updateReports?agent=%s", base, agent)
-	conn, err := websocket.Dial(log.Logger.WithContext(context.Background()), url)
-	if err != nil {
-		log.Logger.Fatal().Err(err).Msg("websocket.Dial error")
-	}
-
-	msg := <-conn.IncomingMessages()
-	if msg.Data == nil {
-		log.Logger.Debug().Msg("connection closed")
 	}
 }
