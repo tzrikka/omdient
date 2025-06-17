@@ -64,7 +64,7 @@ func (c *Conn) IncomingMessages() <-chan Message {
 
 // readMessages runs as a [Conn] goroutine, to call [Conn.readMessage]
 // continuously, in order to process control and data frames, and
-// publish data messages to the subscribers of this connection.
+// publish data [Message]s to the connection's subscribers.
 func (c *Conn) readMessages() {
 	msg := c.readMessage()
 	for msg != nil {

@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"unicode/utf8"
 )
@@ -29,6 +30,12 @@ func (c *Conn) readMessage() *internalMessage {
 	for {
 		h, err := c.readFrameHeader()
 		if err != nil {
+			if errors.Is(err, io.EOF) {
+				c.logger.Trace().Msg("WebSocket connection closed")
+				c.closeReceived = true
+				c.closeSent = true
+				return nil
+			}
 			c.logger.Err(err).Msg("failed to read WebSocket frame header")
 			c.sendCloseControlFrame(StatusInternalError, "frame header reading error")
 			return nil

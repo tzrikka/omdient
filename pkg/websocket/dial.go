@@ -101,6 +101,7 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOpt) (*Conn, error) {
 	go c.readMessages()
 	go c.writeMessages()
 
+	c.logger.Trace().Msg("WebSocket connectionn initialized")
 	return c, nil
 }
 
