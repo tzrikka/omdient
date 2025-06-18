@@ -13,9 +13,9 @@ var clients = sync.Map{}
 
 // Client is a long-running wrapper of connections to the same WebSocket
 // server with the same credentials. It usually manages a single [Conn],
-// except when it gets disconnected, or about to be, in which case the client
-// automatically opens another [Conn] and switches to it as seamlessly
-// as possible, to prevent/minimize downtime during reconnections.
+// except when it gets disconnected, or is about to be, in which case the
+// client automatically opens another [Conn] and seamlessly switches to
+// it seamlessly, to prevent/minimize downtime during reconnections.
 type Client struct {
 	logger *zerolog.Logger
 	url    urlFunc
@@ -40,9 +40,9 @@ func NewOrCachedClient(ctx context.Context, url urlFunc, id string, opts ...Dial
 	}
 
 	actual, loaded := clients.LoadOrStore(hashedID, c)
-	if loaded {
+	if loaded { // Stored by a different goroutine since clients.Load() above.
 		deleteClient(c)
-	} else {
+	} else { // Newly-stored by this goroutine, so activate its message relay.
 		go c.relayMessages()
 	}
 
@@ -67,21 +67,21 @@ func newClient(ctx context.Context, f urlFunc, opts ...DialOpt) (*Client, error)
 		return nil, err
 	}
 
-	c := &Client{}
-	c.logger = zerolog.Ctx(ctx)
-	c.url = f
-	c.opts = opts
-	c.conns = append(c.conns, conn)
-	c.inMsgs = conn.IncomingMessages()
-	c.outMsgs = make(chan Message)
-
-	return c, nil
+	return &Client{
+		logger:  zerolog.Ctx(ctx),
+		url:     f,
+		opts:    opts,
+		conns:   []*Conn{conn},
+		inMsgs:  conn.IncomingMessages(),
+		outMsgs: make(chan Message),
+	}, nil
 }
 
 // deleteClient deletes a newly-created [Client] which is not needed anymore,
-// because a different one was already created with the same unique hashed ID.
+// because a different one was already activated with the same unique hashed ID.
 func deleteClient(c *Client) {
 	c.conns[0].Close(StatusGoingAway)
+
 	c.logger = nil
 	c.url = nil
 	c.opts = nil
