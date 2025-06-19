@@ -20,25 +20,40 @@ func TestNewOrCachedClient(t *testing.T) {
 		return s.URL, nil
 	}
 
-	if _, err := NewOrCachedClient(t.Context(), url, "id1", withTestNonceGen()); err != nil {
-		t.Fatalf("NewOrCachedClient() error = %v", err)
-	}
-	if l := lenClients(); l != 1 {
-		t.Fatalf("len(clients) == %d, want %d", l, 1)
+	tests := []struct {
+		name    string
+		id      string
+		wantLen int
+	}{
+		{
+			name:    "store_first_client",
+			id:      "1",
+			wantLen: 1,
+		},
+		{
+			name:    "store_second_client",
+			id:      "2",
+			wantLen: 2,
+		},
+		{
+			name:    "load_first_client",
+			id:      "1",
+			wantLen: 2,
+		},
 	}
 
-	if _, err := NewOrCachedClient(t.Context(), url, "id2", withTestNonceGen()); err != nil {
-		t.Errorf("NewOrCachedClient() error = %v", err)
-	}
-	if l := lenClients(); l != 2 {
-		t.Fatalf("len(clients) == %d, want %d", l, 2)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, err := NewOrCachedClient(t.Context(), url, tt.id, withTestNonceGen())
+			if err != nil {
+				t.Fatalf("NewOrCachedClient() error = %v", err)
+			}
+			defer c.Close(StatusGoingAway)
 
-	if _, err := NewOrCachedClient(t.Context(), url, "id1", withTestNonceGen()); err != nil {
-		t.Errorf("NewOrCachedClient() error = %v", err)
-	}
-	if l := lenClients(); l != 2 {
-		t.Fatalf("len(clients) == %d, want %d", l, 2)
+			if l := lenClients(); l != tt.wantLen {
+				t.Fatalf("len(clients) == %d, want %d", l, tt.wantLen)
+			}
+		})
 	}
 }
 
