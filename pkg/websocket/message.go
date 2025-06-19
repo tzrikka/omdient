@@ -110,7 +110,7 @@ func (c *Conn) finalizeMessage(op Opcode, data []byte) *internalMessage {
 		data = []byte{}
 	}
 
-	c.logger.Trace().Str("opcode", op.String()).Int("length", len(data)).
+	c.logger.Debug().Str("opcode", op.String()).Int("length", len(data)).
 		Msg("finished receiving WebSocket data message")
 
 	// "When an endpoint is to interpret a byte stream as UTF-8 but finds
