@@ -235,14 +235,10 @@ func (c *Conn) Close(s StatusCode) {
 	c.sendCloseControlFrame(s, "")
 }
 
-func (c *Conn) CloseWithReason(s StatusCode, reason string) {
-	c.sendCloseControlFrame(s, reason)
-}
-
 func (c *Conn) IsClosed() bool {
 	return c.closeReceived && c.isCloseSent()
 }
 
 func (c *Conn) IsClosing() bool {
-	return (c.closeReceived || c.isCloseSent()) && !c.IsClosed()
+	return c.closeReceived || c.isCloseSent()
 }
