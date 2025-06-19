@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/rs/zerolog"
 )
@@ -14,16 +15,18 @@ var clients = sync.Map{}
 // Client is a long-running wrapper of connections to the same WebSocket
 // server with the same credentials. It usually manages a single [Conn],
 // except when it gets disconnected, or is about to be, in which case the
-// client automatically opens another [Conn] and seamlessly switches to
-// it seamlessly, to prevent/minimize downtime during reconnections.
+// client automatically opens another [Conn] and switches to it seamlessly,
+// to prevent or at least minimize downtime during reconnections.
 type Client struct {
 	logger *zerolog.Logger
 	url    urlFunc
 	opts   []DialOpt
 
-	conns   []*Conn
+	conns   [2]*Conn
 	inMsgs  <-chan Message
 	outMsgs chan Message
+
+	refresh *time.Timer
 }
 
 type urlFunc func(ctx context.Context) (string, error)
@@ -57,12 +60,7 @@ func hash(id string) string {
 }
 
 func newClient(ctx context.Context, f urlFunc, opts ...DialOpt) (*Client, error) {
-	url, err := f(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	conn, err := Dial(ctx, url, opts...)
+	conn, err := newConn(ctx, f, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -71,27 +69,42 @@ func newClient(ctx context.Context, f urlFunc, opts ...DialOpt) (*Client, error)
 		logger:  zerolog.Ctx(ctx),
 		url:     f,
 		opts:    opts,
-		conns:   []*Conn{conn},
+		conns:   [2]*Conn{conn},
 		inMsgs:  conn.IncomingMessages(),
 		outMsgs: make(chan Message),
 	}, nil
 }
 
+func newConn(ctx context.Context, f urlFunc, opts ...DialOpt) (*Conn, error) {
+	url, err := f(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return Dial(ctx, url, opts...)
+}
+
+func (c *Client) newConn(f urlFunc, opts ...DialOpt) (*Conn, error) {
+	ctx := c.logger.WithContext(context.Background())
+	return newConn(ctx, f, opts...)
+}
+
 // deleteClient deletes a newly-created [Client] which is not needed anymore,
-// because a different one was already activated with the same unique hashed ID.
+// because a different one was already activated with the same ID.
 func deleteClient(c *Client) {
 	c.conns[0].Close(StatusGoingAway)
 
 	c.logger = nil
 	c.url = nil
 	c.opts = nil
-	c.conns = nil
+
+	c.conns = [2]*Conn{}
 	c.inMsgs = nil
 	c.outMsgs = nil
 }
 
 // relayMessages runs as a [Client] goroutine, to route data [Message]s
-// from the client's active [Conn] to the client's subscribers.
+// from the client's underlying [Conn] to the client's subscribers.
 func (c *Client) relayMessages() {
 	for {
 		if msg, ok := <-c.inMsgs; ok {
@@ -99,30 +112,68 @@ func (c *Client) relayMessages() {
 			continue
 		}
 
-		c.pruneConns()
 		c.replaceConn()
 	}
 }
 
-func (c *Client) pruneConns() {
-	for len(c.conns) > 0 {
-		if c.conns[0].IsClosed() || c.conns[0].IsClosing() {
-			c.conns = c.conns[1:]
-		}
-	}
-}
-
+// replaceConn either creates a new [Conn] (if the existing one is
+// closing/closed), or switches seamlessly to a secondary one which
+// was created by the timer-based goroutine in [RefreshConnectionIn].
 func (c *Client) replaceConn() {
-	if len(c.conns) == 0 {
-		ctx := c.logger.WithContext(context.Background())
-		url, _ := c.url(ctx)
-		conn, _ := Dial(ctx, url, c.opts...)
-		c.conns = append(c.conns, conn)
+	defer func() {
+		c.inMsgs = c.conns[0].IncomingMessages()
+	}()
+
+	// Switch to a fresh secondary connection.
+	if c.conns[1] != nil {
+		c.conns[0] = c.conns[1]
+		c.conns[1] = nil
+		return
 	}
 
-	c.inMsgs = c.conns[0].IncomingMessages()
+	// Create a new connection, with endless retries.
+	i := 0
+	for {
+		conn, err := c.newConn(c.url, c.opts...)
+		if err == nil {
+			c.conns[0] = conn
+			break
+		}
+
+		c.logger.Err(err).Int("retry", i).Msg("failed to replace WebSocket connection")
+		i++
+	}
 }
 
+// IncomingMessages returns the client's channel that publishes
+// data [Message]s as they are received from the server.
 func (c *Client) IncomingMessages() <-chan Message {
 	return c.outMsgs
+}
+
+// RefreshConnectionIn instructs the client to replace its underlying [Conn]
+// seamlessly after the given duration of time. This prevents unnecessary
+// downtime during normal reconnections, which is useful in connections
+// where the disconnection time is known or coordinated in advance.
+func (c *Client) RefreshConnectionIn(d time.Duration) {
+	m := "starting timer to refresh WebSocket connection"
+	if c.refresh != nil {
+		c.refresh.Stop()
+		m = "re" + m
+	}
+	c.logger.Trace().Msg(m)
+
+	c.refresh = time.AfterFunc(d, func() {
+		c.logger.Trace().Msg("refreshing WebSocket connection")
+		c.refresh = nil
+
+		conn, err := c.newConn(c.url, c.opts...)
+		if err != nil {
+			c.logger.Err(err).Msg("failed to refresh WebSocket connection")
+			return
+		}
+
+		c.conns[1] = conn
+		c.conns[0].Close(StatusGoingAway)
+	})
 }

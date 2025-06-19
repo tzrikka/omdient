@@ -44,11 +44,9 @@ func TestNewOrCachedClient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c, err := NewOrCachedClient(t.Context(), url, tt.id, withTestNonceGen())
-			if err != nil {
+			if _, err := NewOrCachedClient(t.Context(), url, tt.id, withTestNonceGen()); err != nil {
 				t.Fatalf("NewOrCachedClient() error = %v", err)
 			}
-			defer c.Close(StatusGoingAway)
 
 			if l := lenClients(); l != tt.wantLen {
 				t.Fatalf("len(clients) == %d, want %d", l, tt.wantLen)
