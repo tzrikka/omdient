@@ -12,4 +12,6 @@ var WebhookHandlers = map[string]receivers.WebhookHandlerFunc{
 	"github-user-pat": github.WebhookHandler,
 	"github-webhook":  github.WebhookHandler,
 	"slack-bot-token": slack.WebhookHandler,
+	"slack-oauth":     slack.WebhookHandler,
+	"slack-oauth-gov": slack.WebhookHandler,
 }
