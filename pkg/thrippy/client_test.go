@@ -103,3 +103,62 @@ func TestLinkData(t *testing.T) {
 		})
 	}
 }
+
+func TestLinkTemplate(t *testing.T) {
+	tests := []struct {
+		name         string
+		linkResp     *thrippypb.GetLinkResponse
+		credsResp    *thrippypb.GetCredentialsResponse
+		respErr      error
+		wantTemplate string
+		wantErr      bool
+	}{
+		{
+			name: "nil",
+		},
+		{
+			name:    "grpc_error",
+			respErr: errors.New("error"),
+			wantErr: true,
+		},
+		{
+			name:    "link_not_found",
+			respErr: status.Error(codes.NotFound, "link not found"),
+		},
+		{
+			name: "existing_link_without_secrets",
+			linkResp: thrippypb.GetLinkResponse_builder{
+				Template: proto.String("template"),
+			}.Build(),
+			credsResp:    thrippypb.GetCredentialsResponse_builder{}.Build(),
+			wantTemplate: "template",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lis, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := grpc.NewServer()
+			thrippypb.RegisterThrippyServiceServer(s, &server{
+				linkResp:  tt.linkResp,
+				credsResp: tt.credsResp,
+				err:       tt.respErr,
+			})
+			go func() {
+				_ = s.Serve(lis)
+			}()
+
+			template, err := LinkTemplate(t.Context(), lis.Addr().String(), insecureCreds(), "link ID")
+			if (err != nil) != tt.wantErr {
+				t.Errorf("LinkData() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if template != tt.wantTemplate {
+				t.Errorf("LinkData() template = %q, want %q", template, tt.wantTemplate)
+			}
+		})
+	}
+}

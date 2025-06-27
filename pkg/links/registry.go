@@ -6,7 +6,8 @@ import (
 	"github.com/tzrikka/omdient/pkg/links/slack"
 )
 
-// WebhookHandlers is a map of all the link-specific webhooks that Omdient supports.
+// WebhookHandlers is a map of all the link-specific
+// stateless webhook handlers that Omdient supports.
 var WebhookHandlers = map[string]receivers.WebhookHandlerFunc{
 	"github-app-jwt":  github.WebhookHandler,
 	"github-user-pat": github.WebhookHandler,
@@ -14,4 +15,10 @@ var WebhookHandlers = map[string]receivers.WebhookHandlerFunc{
 	"slack-bot-token": slack.WebhookHandler,
 	"slack-oauth":     slack.WebhookHandler,
 	"slack-oauth-gov": slack.WebhookHandler,
+}
+
+// ConnectionHandlers is a map of all the link-specific
+// stateful connection handlers that Omdient supports.
+var ConnectionHandlers = map[string]receivers.ConnectionHandlerFunc{
+	"slack-socket-mode": slack.ConnectionHandler,
 }

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lithammer/shortuuid/v4"
@@ -34,6 +35,8 @@ type httpServer struct {
 
 	thrippyAddr  string // To communicate with Thrippy via gRPC.
 	thrippyCreds credentials.TransportCredentials
+
+	connections sync.Map
 }
 
 func newHTTPServer(cmd *cli.Command) *httpServer {
@@ -79,6 +82,9 @@ func baseURL(addr string) *url.URL {
 // run starts an HTTP server to expose webhooks.
 // This is blocking, to keep the Omdient server running.
 func (s *httpServer) run() error {
+	http.HandleFunc("GET /connect/{id}", s.connectHandler)
+	http.HandleFunc("GET /disconnect/{id}", s.disconnectHandler)
+
 	http.HandleFunc("GET /webhook/{id...}", s.webhookHandler)
 	http.HandleFunc("POST /webhook/{id...}", s.webhookHandler)
 
@@ -104,6 +110,79 @@ func (s *httpServer) run() error {
 	}
 
 	return nil
+}
+
+// connectHandler is an idempotent webhook to let users manually start
+// stateful non-webhook connections to process incoming asynchronous event
+// notifications from third-party services, based on their Thrippy link ID.
+func (s *httpServer) connectHandler(w http.ResponseWriter, r *http.Request) {
+	l, id, statusCode := connID(r)
+	if statusCode != http.StatusOK {
+		w.WriteHeader(statusCode)
+		return
+	}
+
+	template, secrets, err := thrippy.LinkData(r.Context(), s.thrippyAddr, s.thrippyCreds, id)
+	statusCode = checkLinkData(l, template, secrets, err)
+	if statusCode != http.StatusOK {
+		w.WriteHeader(statusCode)
+		return
+	}
+	l = l.With().Str("template", template).Logger()
+
+	f, ok := links.ConnectionHandlers[template]
+	if !ok {
+		l.Warn().Msg("bad request: unsupported link template for connections")
+		w.WriteHeader(http.StatusNotImplemented)
+		return
+	}
+
+	d := receivers.LinkData{
+		ID:       id,
+		Template: template,
+		Secrets:  secrets,
+	}
+
+	w.WriteHeader(f(l.WithContext(r.Context()), d))
+	s.connections.Store(id, d)
+}
+
+// disconnectHandler is an idempotent webhook to let users manually stop
+// stateful non-webhook connections that process incoming asynchronous event
+// notifications from third-party services, based on their Thrippy link ID.
+func (s *httpServer) disconnectHandler(w http.ResponseWriter, r *http.Request) {
+	l, id, statusCode := connID(r)
+	if statusCode != http.StatusOK {
+		w.WriteHeader(statusCode)
+		return
+	}
+
+	template, err := thrippy.LinkTemplate(r.Context(), s.thrippyAddr, s.thrippyCreds, id)
+	statusCode = checkLinkData(l, template, map[string]string{}, err)
+	if statusCode != http.StatusOK {
+		w.WriteHeader(statusCode)
+		return
+	}
+
+	l = l.With().Str("template", template).Logger()
+	if _, ok := s.connections.Load(id); !ok {
+		return
+	}
+
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+func connID(r *http.Request) (zerolog.Logger, string, int) {
+	l := log.With().Str("http_method", r.Method).Str("url_path", r.URL.EscapedPath()).Logger()
+	l.Info().Msg("received HTTP request")
+
+	id, _, statusCode := parseURL(r, l)
+	if statusCode != http.StatusOK {
+		return zerolog.Nop(), "", statusCode
+	}
+
+	l = l.With().Str("link_id", id).Logger()
+	return l, id, statusCode
 }
 
 // webhookHandler checks and processes incoming asynchronous
@@ -146,7 +225,7 @@ func (s *httpServer) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	f, ok := links.WebhookHandlers[template]
 	if !ok {
 		l.Warn().Msg("bad request: unsupported link template for webhooks")
-		w.WriteHeader(http.StatusBadRequest)
+		w.WriteHeader(http.StatusNotImplemented)
 		return
 	}
 
@@ -158,7 +237,7 @@ func (s *httpServer) webhookHandler(w http.ResponseWriter, r *http.Request) {
 		JSONPayload: decoded,
 		LinkSecrets: secrets,
 	})
-	if statusCode > 0 {
+	if statusCode != 0 {
 		w.WriteHeader(statusCode)
 	}
 }

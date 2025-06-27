@@ -25,7 +25,7 @@ func Connection(addr string, creds credentials.TransportCredentials) (*grpc.Clie
 }
 
 // LinkData returns the template name and saved secrets of a given Thrippy link.
-// This function reports gRPC errors, but if the link is not found it returns nil.
+// This function reports gRPC errors, but if the link is not found it returns nothing.
 func LinkData(ctx context.Context, grpcAddr string, creds credentials.TransportCredentials, linkID string) (string, map[string]string, error) {
 	l := zerolog.Ctx(ctx)
 
@@ -62,4 +62,34 @@ func LinkData(ctx context.Context, grpcAddr string, creds credentials.TransportC
 	}
 
 	return resp1.GetTemplate(), resp2.GetCredentials(), nil
+}
+
+// LinkTemplate returns the template name of a given Thrippy link. This function
+// reports gRPC errors, but if the link is not found it returns an empty string.
+func LinkTemplate(ctx context.Context, grpcAddr string, creds credentials.TransportCredentials, linkID string) (string, error) {
+	l := zerolog.Ctx(ctx)
+
+	conn, err := Connection(grpcAddr, creds)
+	if err != nil {
+		l.Error().Stack().Err(err).Send()
+		return "", err
+	}
+	defer conn.Close()
+
+	c := thrippypb.NewThrippyServiceClient(conn)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	resp, err := c.GetLink(ctx, thrippypb.GetLinkRequest_builder{
+		LinkId: proto.String(linkID),
+	}.Build())
+	if err != nil {
+		if status.Code(err) != codes.NotFound {
+			l.Error().Stack().Err(err).Send()
+			return "", err
+		}
+		return "", nil
+	}
+
+	return resp.GetTemplate(), nil
 }

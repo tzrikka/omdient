@@ -5,7 +5,7 @@
 
 Omdient is a robust and scalable listener for all kinds of asynchronous event notifications: via HTTP webhooks, [WebSocket](https://en.wikipedia.org/wiki/WebSocket) connections, and [Google Cloud Pub/Sub](https://cloud.google.com/pubsub/docs/overview).
 
-Listeners may be passive receivers with a static configuration on the remote service's side, or semi-active subscribers that renew their subscription from time to time, or stateful clients maintaining a 2-way streaming connection with the remote service.
+Listeners may be passive and stateless receivers with a static configuration on the remote service's side, or semi-active subscribers that renew their subscription from time to time, or stateful clients maintaining a 2-way streaming connection with the remote service.
 
 For example: event notifications from services such as Slack (simple HTTP webhook), Discord (WebSocket client), and Gmail (Pub/Sub subscriber).
 

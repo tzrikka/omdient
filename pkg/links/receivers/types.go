@@ -15,4 +15,12 @@ type RequestData struct {
 	LinkSecrets map[string]string
 }
 
+type LinkData struct {
+	ID       string
+	Template string
+	Secrets  map[string]string
+}
+
 type WebhookHandlerFunc func(ctx context.Context, w http.ResponseWriter, r RequestData) int
+
+type ConnectionHandlerFunc func(ctx context.Context, data LinkData) int

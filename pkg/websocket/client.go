@@ -3,6 +3,7 @@ package websocket
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -176,4 +177,14 @@ func (c *Client) RefreshConnectionIn(d time.Duration) {
 		c.conns[1] = conn
 		c.conns[0].Close(StatusGoingAway)
 	})
+}
+
+// SendJSONMessage sends a JSON text message to the server.
+func (c *Client) SendJSONMessage(v any) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	return <-c.conns[0].SendTextMessage(b)
 }

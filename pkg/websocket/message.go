@@ -90,8 +90,6 @@ func (c *Conn) readMessage() *internalMessage {
 		case opcodePing:
 			if err := <-c.sendControlFrame(opcodePong, data); err != nil {
 				c.logger.Err(err).Bytes("payload", data).Msg("failed to send WebSocket pong control frame")
-			} else {
-				c.logger.Trace().Bytes("payload", data).Msg("sent WebSocket pong control frame")
 			}
 
 		case opcodePong:
