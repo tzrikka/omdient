@@ -50,7 +50,6 @@ func WebhookHandler(ctx context.Context, w http.ResponseWriter, r receivers.Requ
 		Any("headers", r.Headers).
 		Any("query_or_form", r.QueryOrForm).
 		Any("json_payload", r.JSONPayload).
-		Any("link_secrets", r.LinkSecrets).
 		Send()
 
 	return http.StatusOK
