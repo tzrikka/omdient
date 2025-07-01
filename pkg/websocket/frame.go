@@ -144,7 +144,9 @@ func (c *Conn) readFrameHeader() (frameHeader, error) {
 
 // maxControlPayload is the maximum length of a control frame payload,
 // as defined in https://datatracker.ietf.org/doc/html/rfc6455#section-5.5.
-const maxControlPayload = 125
+const (
+	maxControlPayload = 125
+)
 
 // checkFrameHeader checks if the connection needs to be closed, in case the
 // server sent an invalid frame. If so, it also returns a human-readable reason.

@@ -33,8 +33,8 @@ type httpServer struct {
 	httpPort   int      // To initialize the HTTP server.
 	thrippyURL *url.URL // Optional passthrough for Thrippy OAuth.
 
-	thrippyAddr  string // To communicate with Thrippy via gRPC.
-	thrippyCreds credentials.TransportCredentials
+	thrippyGRPCAddr string
+	thrippyCreds    credentials.TransportCredentials
 
 	connections sync.Map
 }
@@ -44,8 +44,8 @@ func newHTTPServer(cmd *cli.Command) *httpServer {
 		httpPort:   cmd.Int("webhook-port"),
 		thrippyURL: baseURL(cmd.String("thrippy-http-addr")),
 
-		thrippyAddr:  cmd.String("thrippy-server-addr"),
-		thrippyCreds: thrippy.SecureCreds(cmd),
+		thrippyGRPCAddr: cmd.String("thrippy-server-addr"),
+		thrippyCreds:    thrippy.SecureCreds(cmd),
 	}
 }
 
@@ -122,7 +122,7 @@ func (s *httpServer) connectHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	template, secrets, err := thrippy.LinkData(r.Context(), s.thrippyAddr, s.thrippyCreds, id)
+	template, secrets, err := thrippy.LinkData(r.Context(), s.thrippyGRPCAddr, s.thrippyCreds, id)
 	statusCode = checkLinkData(l, template, secrets, err)
 	if statusCode != http.StatusOK {
 		w.WriteHeader(statusCode)
@@ -157,7 +157,7 @@ func (s *httpServer) disconnectHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	template, err := thrippy.LinkTemplate(r.Context(), s.thrippyAddr, s.thrippyCreds, id)
+	template, err := thrippy.LinkTemplate(r.Context(), s.thrippyGRPCAddr, s.thrippyCreds, id)
 	statusCode = checkLinkData(l, template, map[string]string{}, err)
 	if statusCode != http.StatusOK {
 		w.WriteHeader(statusCode)
@@ -204,7 +204,7 @@ func (s *httpServer) webhookHandler(w http.ResponseWriter, r *http.Request) {
 		l = l.With().Str("path_suffix", pathSuffix).Logger()
 	}
 
-	template, secrets, err := thrippy.LinkData(r.Context(), s.thrippyAddr, s.thrippyCreds, linkID)
+	template, secrets, err := thrippy.LinkData(r.Context(), s.thrippyGRPCAddr, s.thrippyCreds, linkID)
 	if statusCode := checkLinkData(l, template, secrets, err); statusCode != http.StatusOK {
 		w.WriteHeader(statusCode)
 		return

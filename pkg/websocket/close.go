@@ -117,7 +117,9 @@ func (s StatusCode) String() string {
 
 // maxCloseReason is the maximum length of a connection closing reason.
 // The difference from [maxControlPayload] is due to the status code.
-const maxCloseReason = maxControlPayload - 2
+const (
+	maxCloseReason = maxControlPayload - 2
+)
 
 // parseClosePayload extracts the [StatusCode] and the optional
 // UTF-8 reason from an incoming connection-close control frame.
