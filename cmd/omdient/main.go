@@ -22,24 +22,13 @@ const (
 )
 
 func main() {
-	buildInfo, _ := debug.ReadBuildInfo()
-	configFilePath := configFile()
-
-	flags := []cli.Flag{
-		&cli.BoolFlag{
-			Name:  "dev",
-			Usage: "simple setup, but unsafe for production",
-		},
-	}
-	flags = append(flags, http.Flags(configFilePath)...)
-	flags = append(flags, thrippy.Flags(configFilePath)...)
-	flags = append(flags, etcd.Flags(configFilePath)...)
+	bi, _ := debug.ReadBuildInfo()
 
 	cmd := &cli.Command{
 		Name:    "omdient",
 		Usage:   "Listen to events notifications over HTTP webhooks, WebSockets, and Pub/Sub",
-		Version: buildInfo.Main.Version,
-		Flags:   flags,
+		Version: bi.Main.Version,
+		Flags:   flags(),
 		Action:  http.Start,
 	}
 
@@ -47,6 +36,21 @@ func main() {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func flags() []cli.Flag {
+	fs := []cli.Flag{
+		&cli.BoolFlag{
+			Name:  "dev",
+			Usage: "simple setup, but unsafe for production",
+		},
+	}
+
+	path := configFile()
+	fs = append(fs, http.Flags(path)...)
+	fs = append(fs, thrippy.Flags(path)...)
+	fs = append(fs, etcd.Flags(path)...)
+	return fs
 }
 
 // configFile returns the path to the app's configuration file.
