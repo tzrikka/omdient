@@ -1,4 +1,8 @@
-package receivers
+// Package links defines standard input parameter and function
+// signature types for all the handler functions in [pkg/links].
+//
+// [pkg/links]: https://pkg.go.dev/github.com/tzrikka/omdient/pkg/links
+package links
 
 import (
 	"context"

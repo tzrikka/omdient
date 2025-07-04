@@ -12,7 +12,7 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/tzrikka/omdient/pkg/links/receivers"
+	"github.com/tzrikka/omdient/internal/links"
 )
 
 const (
@@ -30,7 +30,7 @@ const (
 	slackSigVersion = "v0"
 )
 
-func WebhookHandler(ctx context.Context, w http.ResponseWriter, r receivers.RequestData) int {
+func WebhookHandler(ctx context.Context, w http.ResponseWriter, r links.RequestData) int {
 	l := zerolog.Ctx(ctx).With().Str("link_type", "slack").Str("link_medium", "webhook").Logger()
 
 	statusCode := checkContentTypeHeader(l, r)
@@ -68,7 +68,7 @@ func WebhookHandler(ctx context.Context, w http.ResponseWriter, r receivers.Requ
 	return http.StatusOK
 }
 
-func checkContentTypeHeader(l zerolog.Logger, r receivers.RequestData) int {
+func checkContentTypeHeader(l zerolog.Logger, r links.RequestData) int {
 	expected := "application/x-www-form-urlencoded"
 	if r.PathSuffix == "event" {
 		expected = "application/json"
@@ -84,7 +84,7 @@ func checkContentTypeHeader(l zerolog.Logger, r receivers.RequestData) int {
 	return http.StatusOK
 }
 
-func checkTimestampHeader(l zerolog.Logger, r receivers.RequestData) int {
+func checkTimestampHeader(l zerolog.Logger, r links.RequestData) int {
 	ts := r.Headers.Get(timestampHeader)
 	if ts == "" {
 		l.Warn().Str("header", timestampHeader).Msg("bad request: missing header")
@@ -108,7 +108,7 @@ func checkTimestampHeader(l zerolog.Logger, r receivers.RequestData) int {
 	return http.StatusOK
 }
 
-func checkSignatureHeader(l zerolog.Logger, r receivers.RequestData) int {
+func checkSignatureHeader(l zerolog.Logger, r links.RequestData) int {
 	sig := r.Headers.Get(signatureHeader)
 	if sig == "" {
 		l.Warn().Str("header", signatureHeader).Msg("bad request: missing header")

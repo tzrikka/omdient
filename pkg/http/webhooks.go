@@ -19,9 +19,9 @@ import (
 	"github.com/urfave/cli/v3"
 	"google.golang.org/grpc/credentials"
 
+	intlinks "github.com/tzrikka/omdient/internal/links"
+	"github.com/tzrikka/omdient/internal/thrippy"
 	"github.com/tzrikka/omdient/pkg/links"
-	"github.com/tzrikka/omdient/pkg/links/receivers"
-	"github.com/tzrikka/omdient/pkg/thrippy"
 )
 
 const (
@@ -137,7 +137,7 @@ func (s *httpServer) connectHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	d := receivers.LinkData{
+	d := intlinks.LinkData{
 		ID:       id,
 		Template: template,
 		Secrets:  secrets,
@@ -229,7 +229,7 @@ func (s *httpServer) webhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	statusCode = f(l.WithContext(r.Context()), w, receivers.RequestData{
+	statusCode = f(l.WithContext(r.Context()), w, intlinks.RequestData{
 		PathSuffix:  pathSuffix,
 		Headers:     r.Header,
 		QueryOrForm: r.Form,

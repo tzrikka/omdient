@@ -1,3 +1,8 @@
+// Package thrippy provides minimal and lightweight wrappers for some client
+// functionalities of the [Thrippy gRPC service]. It is meant to facilitate
+// code reuse, not to provide a complete native layer on top of gRPC.
+//
+// [Thrippy gRPC service]: https://github.com/tzrikka/thrippy-api/blob/main/proto/thrippy/v1/thrippy.proto
 package thrippy
 
 import (
@@ -18,13 +23,13 @@ const (
 	timeout = 3 * time.Second
 )
 
-// Connection creates a gRPC client connection to the given Thrippy server address.
+// Connection creates a gRPC client connection to the given server address.
 // It supports both secure and insecure connections, based on the given credentials.
 func Connection(addr string, creds credentials.TransportCredentials) (*grpc.ClientConn, error) {
 	return grpc.NewClient(addr, grpc.WithTransportCredentials(creds))
 }
 
-// LinkData returns the template name and saved secrets of a given Thrippy link.
+// LinkData returns the template name and saved secrets of the given Thrippy link.
 // This function reports gRPC errors, but if the link is not found it returns nothing.
 func LinkData(ctx context.Context, grpcAddr string, creds credentials.TransportCredentials, linkID string) (string, map[string]string, error) {
 	l := zerolog.Ctx(ctx)

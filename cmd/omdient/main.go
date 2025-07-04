@@ -10,9 +10,9 @@ import (
 	altsrc "github.com/urfave/cli-altsrc/v3"
 	"github.com/urfave/cli/v3"
 
+	"github.com/tzrikka/omdient/internal/thrippy"
 	"github.com/tzrikka/omdient/pkg/etcd"
 	"github.com/tzrikka/omdient/pkg/http"
-	"github.com/tzrikka/omdient/pkg/thrippy"
 	"github.com/tzrikka/xdg"
 )
 

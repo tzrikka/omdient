@@ -12,7 +12,7 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/tzrikka/omdient/pkg/links/receivers"
+	"github.com/tzrikka/omdient/internal/links"
 	"github.com/tzrikka/omdient/pkg/websocket"
 )
 
@@ -22,7 +22,7 @@ const (
 	maxSize     = 1024 // 1 KiB.
 )
 
-func ConnectionHandler(ctx context.Context, data receivers.LinkData) int {
+func ConnectionHandler(ctx context.Context, data links.LinkData) int {
 	l := zerolog.Ctx(ctx)
 	t := data.Secrets["app_token"]
 	if t == "" {
